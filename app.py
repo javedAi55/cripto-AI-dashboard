@@ -12,7 +12,6 @@ st.set_page_config(
 
 # Function to fetch Binance Klines with Fallbacks and calculate indicators
 def get_ai_signal(symbol):
-    # Binance Public & Backup API Endpoints
     urls = [
         f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
         f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
@@ -20,7 +19,7 @@ def get_ai_signal(symbol):
     ]
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     }
     
     data = None
@@ -42,8 +41,12 @@ def get_ai_signal(symbol):
             'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
         df['close'] = df['close'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
         
         current_price = df['close'].iloc[-1]
+        h24 = df['high'].max()
+        l24 = df['low'].min()
         
         # Calculate EMA
         df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
@@ -66,26 +69,35 @@ def get_ai_signal(symbol):
             tp1 = current_price * 0.985
             tp2 = current_price * 0.970
             sl = current_price * 1.015
-            reason = f"RSI: {current_rsi:.1f} (Bearish Trend / EMA Crossover Down)"
+            reason = f"RSI: {current_rsi:.1f} (Bearish Reversal / EMA Downtrend)"
             confidence = min(95, int(65 + abs(current_rsi - 50) + (10 if ema9 < ema21 else 0)))
+            risk = sl - current_price
+            reward = current_price - tp1
+            rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
         else:
             signal_type = "LONG 🟢"
             tp1 = current_price * 1.015
             tp2 = current_price * 1.030
             sl = current_price * 0.985
-            reason = f"RSI: {current_rsi:.1f} (Bullish Trend / EMA Crossover Up)"
+            reason = f"RSI: {current_rsi:.1f} (Bullish Reversal / EMA Uptrend)"
             confidence = min(95, int(65 + abs(50 - current_rsi) + (10 if ema9 > ema21 else 0)))
+            risk = current_price - sl
+            reward = tp1 - current_price
+            rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
             
         return {
             "success": True,
             "price": current_price,
+            "h24": h24,
+            "l24": l24,
             "signal": signal_type,
             "tp1": tp1,
             "tp2": tp2,
             "sl": sl,
             "reason": reason,
             "confidence": confidence,
-            "rsi": current_rsi
+            "rsi": current_rsi,
+            "rr_ratio": rr_ratio
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -140,18 +152,39 @@ if "last_signal" in st.session_state:
     sig = st.session_state["last_signal"]
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("کوائن قیمت (Current Price)", f"${sig['price']:.4f}")
+    col1.metric("موجودہ قیمت (Price)", f"${sig['price']:.2f}")
     col2.metric("AI سگنل (Signal)", sig["signal"])
-    col3.metric("ایکوریسی (Confidence)", f"{sig['confidence']}%")
-    col4.metric("RSI انڈیکیٹر", f"{sig['rsi']:.1f}")
+    col3.metric("اعتماد (Confidence)", f"{sig['confidence']}%")
+    col4.metric("رسک ریشو (R:R)", sig['rr_ratio'])
     
     st.markdown("### 📋 ٹریڈنگ پلان (Trading Plan):")
     c_tp1, c_tp2, c_sl = st.columns(3)
-    c_tp1.success(f"🎯 **Target 1 (TP1):** `${sig['tp1']:.4f}`")
-    c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.4f}`")
-    c_sl.error(f"🛑 **Stop Loss (SL):** `${sig['sl']:.4f}`")
+    c_tp1.success(f"🎯 **Target 1 (TP1):** `${sig['tp1']:.2f}`")
+    c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.2f}`")
+    c_sl.error(f"🛑 **Stop Loss (SL):** `${sig['sl']:.2f}`")
     
-    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']}")
+    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']} | RSI: {sig['rsi']:.1f}")
+    
+    # Binance Square Ready-Made Post Generator
+    st.markdown("---")
+    st.markdown("### 📢 Binance Square پوسٹ کے لیے ٹیکسٹ (1-Click Copy)")
+    post_content = f"""🚨 {coin_pair} AI Futures Trading Signal 🚨
+
+Signal: {sig['signal']}
+Price: ${sig['price']:.2f}
+
+🎯 Target 1: ${sig['tp1']:.2f}
+🎯 Target 2: ${sig['tp2']:.2f}
+🛑 Stop Loss: ${sig['sl']:.2f}
+
+📊 AI Confidence: {sig['confidence']}% | Risk/Reward: {sig['rr_ratio']}
+
+👇 Trade directly on Binance using my VIP link:
+https://web3.binance.com/m/referral?ref=ZNV91XU8
+
+#Crypto #Binance #{clean_symbol} #TradingSignals"""
+
+    st.code(post_content, language="markdown")
 
 # TradingView Binance Live Chart
 st.markdown("---")
@@ -183,7 +216,7 @@ tv_widget_html = f"""
 """
 components.html(tv_widget_html, height=560)
 
-# Quick Trade Affiliate Buttons (Updated with user's Affiliate Link)
+# Quick Trade Affiliate Buttons
 st.markdown("---")
 if lang == "Urdu (اردو)":
     st.subheader("🔗 ایکسچینج پر ٹریڈ شروع کریں")
@@ -212,4 +245,3 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
-
