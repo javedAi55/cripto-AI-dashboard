@@ -5,35 +5,32 @@ import pandas as pd
 
 # Page Configuration
 st.set_page_config(
-    page_title="Crypto AI Futures Dashboard",
+    page_title="Crypto AI Futures & Candle Predictor",
     page_icon="⚡",
     layout="wide"
 )
 
-# Function to fetch Binance Klines with Fallbacks and calculate indicators
-def get_ai_signal(symbol):
+# Function to fetch Binance Data & Calculate Advanced Signal + Candle Prediction
+def get_ai_analysis(symbol, interval="15m"):
     urls = [
-        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=100",
-        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=100",
-        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=100"
+        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={interval}&limit=100",
+        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=100",
+        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=100"
     ]
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-    }
-    
+    headers = {'User-Agent': 'Mozilla/5.0'}
     data = None
     for url in urls:
         try:
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
                 break
         except Exception:
             continue
 
     if not data:
-        return {"success": False, "error": "Unable to connect to Binance market servers."}
+        return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
 
     try:
         df = pd.DataFrame(data, columns=[
@@ -41,10 +38,14 @@ def get_ai_signal(symbol):
             'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
         df['close'] = df['close'].astype(float)
+        df['open'] = df['open'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        df['volume'] = df['volume'].astype(float)
         
         current_price = df['close'].iloc[-1]
         
-        # Calculate RSI
+        # 1. RSI Calculation
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -52,220 +53,207 @@ def get_ai_signal(symbol):
         rsi = 100 - (100 / (1 + rs))
         current_rsi = rsi.iloc[-1]
         
-        # Calculate MACD (DIF, DEA)
+        # 2. MACD Calculation
         ema12 = df['close'].ewm(span=12, adjust=False).mean()
         ema26 = df['close'].ewm(span=26, adjust=False).mean()
         dif = ema12 - ema26
         dea = dif.ewm(span=9, adjust=False).mean()
-        
         current_dif = dif.iloc[-1]
         current_dea = dea.iloc[-1]
         
-        # Signal Logic combining RSI (30/70 Extreme Rules) & MACD
-        if current_rsi >= 65 or (current_dif < current_dea and current_rsi > 50):
-            signal_type = "SHORT 🔻"
-            entry_low = current_price
-            entry_high = current_price * 1.0015
-            tp1 = current_price * 0.985
-            tp2 = current_price * 0.970
-            sl = current_price * 1.015
-            
-            if current_rsi >= 65:
-                confidence = min(95, int(80 + (current_rsi - 65)))
-                reason = f"RSI Overbought Zone ({current_rsi:.1f}) + Bearish Reversal"
-            else:
-                confidence = 78
-                reason = f"MACD Bearish Crossover (DIF < DEA) | RSI: {current_rsi:.1f}"
-                
-            risk = sl - current_price
-            reward = current_price - tp1
-            rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
+        # 3. EMA 20 & 50 Trend
+        ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+        
+        # Next Candle Prediction Logic (Probability Score)
+        bullish_score = 0
+        bearish_score = 0
+        reasons = []
 
-        elif current_rsi <= 35 or (current_dif > current_dea and current_rsi <= 50):
+        # RSI Checks
+        if current_rsi < 35:
+            bullish_score += 35
+            reasons.append(f"RSI Oversold ({current_rsi:.1f}) - بائنگ پریشر کی توقع")
+        elif current_rsi > 65:
+            bearish_score += 35
+            reasons.append(f"RSI Overbought ({current_rsi:.1f}) - سیلنگ پریشر کی توقع")
+        else:
+            if current_rsi > 50:
+                bullish_score += 15
+            else:
+                bearish_score += 15
+
+        # MACD Checks
+        if current_dif > current_dea:
+            bullish_score += 30
+            reasons.append("MACD Bullish Crossover (DIF > DEA)")
+        else:
+            bearish_score += 30
+            reasons.append("MACD Bearish Crossover (DIF < DEA)")
+
+        # EMA Trend Check
+        if current_price > ema20:
+            bullish_score += 25
+            reasons.append("قیمت EMA(20) سے اوپر ہے (Upward Trend)")
+        else:
+            bearish_score += 25
+            reasons.append("قیمت EMA(20) سے نیچے ہے (Downward Trend)")
+
+        # Normalize Probability
+        total = bullish_score + bearish_score
+        bull_prob = int((bullish_score / total) * 100) if total > 0 else 50
+        bear_prob = 100 - bull_prob
+
+        if bull_prob >= 60:
+            candle_pred = "🟢 GREEN CANDLE (Bullish)"
+            pred_color = "green"
+            pred_prob = bull_prob
+        elif bear_prob >= 60:
+            candle_pred = "🔴 RED CANDLE (Bearish)"
+            pred_color = "red"
+            pred_prob = bear_prob
+        else:
+            candle_pred = "⚖️ SIDEWAYS / NEUTRAL"
+            pred_color = "orange"
+            pred_prob = 50
+
+        # Signal Logic
+        if bull_prob >= 65:
             signal_type = "LONG 🟢"
             entry_low = current_price
             entry_high = current_price * 1.0015
-            tp1 = current_price * 1.015
-            tp2 = current_price * 1.030
-            sl = current_price * 0.985
-            
-            if current_rsi <= 35:
-                confidence = min(95, int(80 + (35 - current_rsi)))
-                reason = f"RSI Oversold Zone ({current_rsi:.1f}) + Bullish Bounce"
-            else:
-                confidence = 82
-                reason = f"MACD Bullish Crossover (DIF > DEA) | RSI: {current_rsi:.1f}"
-                
-            risk = current_price - sl
-            reward = tp1 - current_price
-            rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
-
+            tp1 = current_price * 1.012
+            tp2 = current_price * 1.025
+            sl = current_price * 0.988
+        elif bear_prob >= 65:
+            signal_type = "SHORT 🔻"
+            entry_low = current_price
+            entry_high = current_price * 1.0015
+            tp1 = current_price * 0.988
+            tp2 = current_price * 0.975
+            sl = current_price * 1.012
         else:
-            signal_type = "NEUTRAL / WAIT ⏳"
+            signal_type = "WAIT ⏳ (انتقال زون)"
             entry_low = current_price
             entry_high = current_price
             tp1 = current_price
             tp2 = current_price
             sl = current_price
-            confidence = 50
-            reason = f"RSI Neutral Zone ({current_rsi:.1f}) - Market Consolidation (Wait for Breakout)"
-            rr_ratio = "N/A"
-            
+
         return {
             "success": True,
             "price": current_price,
+            "rsi": current_rsi,
+            "signal": signal_type,
+            "candle_pred": candle_pred,
+            "pred_color": pred_color,
+            "pred_prob": pred_prob,
+            "reasons": reasons,
             "entry_low": entry_low,
             "entry_high": entry_high,
-            "signal": signal_type,
             "tp1": tp1,
             "tp2": tp2,
             "sl": sl,
-            "reason": reason,
-            "confidence": confidence,
-            "rsi": current_rsi,
-            "rr_ratio": rr_ratio
+            "bull_prob": bull_prob,
+            "bear_prob": bear_prob
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# Sidebar Settings
-st.sidebar.title("⚙ Settings / سیٹنگز")
-lang = st.sidebar.radio("🌐 Select Language / زبان منتخب کریں", ["Urdu (اردو)", "English"])
-coin_pair = st.sidebar.selectbox(
-    "🪙 Select Crypto Pair / کوائن منتخب کریں",
-    ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT"]
-)
+# Sidebar Controls
+st.sidebar.title("⚙️️ سیٹنگز (Settings)")
+coin_pair = st.sidebar.selectbox("🪙 کوائن منتخب کریں", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT"])
+timeframe = st.sidebar.selectbox("⏱️ کینڈل ٹائم فریم (Timeframe)", ["15m (بہترین فورن ٹریڈ)", "1h (زیادہ کنفرم)"], index=0)
 clean_symbol = coin_pair.replace("/", "")
+tf_param = "15m" if "15m" in timeframe else "1h"
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("💰 Risk Management / رسک مینجمنٹ")
-capital = st.sidebar.number_input("Capital ($) / کل سرمایہ", min_value=10.0, value=100.0, step=10.0)
-risk_pct = st.sidebar.slider("Risk per Trade (%) / فی ٹریڈ رسک", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
-leverage = st.sidebar.slider("Leverage (x) / لیوریج", min_value=1, max_value=50, value=3)
+st.sidebar.subheader("💰 پوزیشن سائز کیلکولیٹر")
+capital = st.sidebar.number_input("کل سرمایہ ($)", min_value=10.0, value=100.0, step=10.0)
+risk_pct = st.sidebar.slider("فی ٹریڈ رسک (%)", min_value=0.5, max_value=5.0, value=2.0)
+leverage = st.sidebar.slider("لیوریج (Leverage)", min_value=1, max_value=20, value=3)
 
-# Main Header
-if lang == "Urdu (اردو)":
-    st.title(f"⚡ {coin_pair} AI فیوچرز ٹریڈنگ ڈیش بورڈ")
-    st.caption("بینانس لائیو ٹریڈنگ ویو چارٹ، AI سگنلز اور فیوچرز رسک کیلکولیٹر")
-else:
-    st.title(f"⚡ {coin_pair} AI Futures Trading Dashboard")
-    st.caption("Binance Live TradingView Chart, AI Signals & Futures Risk Calculator")
+# Dashboard Title
+st.title(f"⚡ {coin_pair} AI کینڈل پریڈکٹر اور ٹریڈنگ ڈیش بورڈ")
+st.caption(f"لائیو بینانس ڈیٹا | ٹائم فریم: {tf_param}")
 
-# AI Signal Section
 st.markdown("---")
-if lang == "Urdu (اردو)":
-    st.subheader("🎯 AI لائیو ٹریڈنگ سگنل (Live AI Signal)")
-    btn_label = f"🤖 {coin_pair} کا لائیو سگنل حاصل کریں (Generate Signal)"
-else:
-    st.subheader("🎯 Live AI Trading Signal")
-    btn_label = f"🤖 Generate {coin_pair} Signal"
+st.subheader("🔮 اگلی کینڈل کا AI اندازہ (Next Candle Predictor)")
 
-if st.button(btn_label, type="primary", use_container_width=True):
-    with st.spinner("Analyzing Binance Market Data..."):
-        sig = get_ai_signal(clean_symbol)
-        if sig["success"]:
-            st.session_state["last_signal"] = sig
+if st.button("🤖 لائیو کینڈل اور ٹریڈ سگنل چیک کریں", type="primary", use_container_width=True):
+    with st.spinner("بینانس کینڈلز اور انڈیکیٹرز کا تجزیہ ہو رہا ہے..."):
+        res = get_ai_analysis(clean_symbol, tf_param)
+        if res["success"]:
+            st.session_state["analysis"] = res
         else:
-            st.error("مارکیٹ ڈیٹا حاصل کرنے میں مسئلہ آیا۔ براہ کرم دوبارہ کوشش کریں۔")
+            st.error(res["error"])
 
-if "last_signal" in st.session_state:
-    sig = st.session_state["last_signal"]
+if "analysis" in st.session_state:
+    data = st.session_state["analysis"]
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("موجودہ قیمت (Price)", f"${sig['price']:.2f}")
-    col2.metric("AI سگنل (Signal)", sig["signal"])
-    col3.metric("اعتماد (Confidence)", f"{sig['confidence']}%")
-    col4.metric("رسک ریشو (R:R)", sig['rr_ratio'])
+    # Candle Prediction Banner
+    col1, col2, col3 = st.columns(3)
+    col1.metric("موجودہ قیمت (Price)", f"${data['price']:.2f}")
+    col2.metric("اگلی کینڈل کا امکان", data["candle_pred"])
+    col3.metric("امکان کی شرح (Probability)", f"{data['pred_prob']}%")
     
-    st.markdown("### 📋 ٹریڈنگ پلان (Trading Plan):")
-    st.info(f"📍 **انٹری زون (Entry Zone):** `${sig['entry_low']:.2f} - ${sig['entry_high']:.2f}`")
+    st.progress(data["bull_prob"] / 100)
+    st.caption(f"📈 🟢 Bullish Probability: {data['bull_prob']}%  |  📉 🔴 Bearish Probability: {data['bear_prob']}%")
     
-    c_tp1, c_tp2, c_sl = st.columns(3)
-    c_tp1.success(f"🎯 **Target 1 (TP1):** `${sig['tp1']:.2f}`")
-    c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.2f}`")
-    c_sl.error(f"🛑 **Stop Loss (SL):** `${sig['sl']:.2f}`")
-    
-    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']}")
-    
-    # Binance Square Ready-Made Post Generator
+    st.markdown("#### 🔍 تکنیکی دلائل (Technical Reasons):")
+    for r in data["reasons"]:
+        st.write(f"• {r}")
+
     st.markdown("---")
-    st.markdown("### 📢 Binance Square پوسٹ کے لیے ٹیکسٹ (1-Click Copy)")
-    post_content = f"""🚨 {coin_pair} AI Futures Trading Signal 🚨
+    st.subheader("🎯 مجوزہ AI ٹریڈنگ سگنل")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.info(f"📍 **Entry Zone:**\n${data['entry_low']:.2f} - ${data['entry_high']:.2f}")
+    c2.success(f"🎯 **Target 1:**\n${data['tp1']:.2f}")
+    c3.success(f"🎯 **Target 2:**\n${data['tp2']:.2f}")
+    c4.error(f"🛑 **Stop Loss:**\n${data['sl']:.2f}")
 
-Signal: {sig['signal']}
-📍 Entry Zone: ${sig['entry_low']:.2f} -${sig['entry_high']:.2f}
+    # Binance Square Ready Post
+    st.markdown("---")
+    st.markdown("### 📢 بینانس اسکوائر پوسٹ (1-Click Copy)")
+    post_text = f"""🚨 {coin_pair} ({tf_param}) Candle & Trade Analysis 🚨
 
-🎯 Target 1: ${sig['tp1']:.2f}
-🎯 Target 2: ${sig['tp2']:.2f}
-🛑 Stop Loss: ${sig['sl']:.2f}
+🔮 Next Candle Projection: {data['candle_pred']} ({data['pred_prob']}% Probability)
+📍 Entry Zone: ${data['entry_low']:.2f} - ${data['entry_high']:.2f}
 
-📊 AI Confidence: {sig['confidence']}% | Risk/Reward: {sig['rr_ratio']}
+🎯 TP1: ${data['tp1']:.2f} | 🎯 TP2: ${data['tp2']:.2f}
+🛑 SL: ${data['sl']:.2f}
 
-👇 Trade directly on Binance using my VIP link:
+📊 RSI: {data['rsi']:.1f}
+
+👇 Trade on Binance:
 https://web3.binance.com/m/referral?ref=ZNV91XU8
 
-#Crypto #Binance #{clean_symbol} #TradingSignals"""
+#Crypto #Binance #{clean_symbol} #Signals"""
 
-    st.code(post_content, language="markdown")
+    st.code(post_text, language="markdown")
 
-# TradingView Binance Live Chart
+# Live TradingView Chart
 st.markdown("---")
-if lang == "Urdu (اردو)":
-    st.subheader("📈 بینانس لائیو کینڈل اسٹک چارٹ (Binance Real-Time Chart)")
-else:
-    st.subheader("📈 Binance Live Candlestick Chart (Real-Time)")
-
-tv_widget_html = f"""
-<div class="tradingview-widget-container" style="height:550px;width:100%;">
-  <div id="tradingview_chart" style="height:550px;width:100%;"></div>
+st.subheader("📈 بینانس لائیو چارٹ")
+tv_widget = f"""
+<div class="tradingview-widget-container" style="height:500px;width:100%;">
+  <div id="tradingview_chart" style="height:500px;width:100%;"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget({{
     "autosize": true,
     "symbol": "BINANCE:{clean_symbol}",
-    "interval": "15",
-    "timezone": "Etc/UTC",
+    "interval": "{15 if tf_param == '15m' else 60}",
     "theme": "dark",
     "style": "1",
     "locale": "en",
-    "toolbar_bg": "#f1f3f6",
-    "enable_publishing": false,
-    "allow_symbol_change": true,
     "container_id": "tradingview_chart"
   }});
   </script>
 </div>
 """
-components.html(tv_widget_html, height=560)
+components.html(tv_widget, height=520)
 
-# Quick Trade Affiliate Buttons
-st.markdown("---")
-if lang == "Urdu (اردو)":
-    st.subheader("🔗 ایکسچینج پر ٹریڈ شروع کریں")
-else:
-    st.subheader("🔗 Trade Directly on Exchange")
-
-col1, col2 = st.columns(2)
-with col1:
-    st.link_button(f"🟡 Trade {coin_pair} on Binance", "https://web3.binance.com/m/referral?ref=ZNV91XU8", use_container_width=True)
-with col2:
-    st.link_button(f"🖤 Trade {coin_pair} on Bybit", f"https://www.bybit.com/trade/usdt/{clean_symbol}", use_container_width=True)
-
-# Risk & Position Size Calculator
-st.markdown("---")
-max_loss = capital * (risk_pct / 100)
-suggested_position = max_loss * leverage
-required_margin = suggested_position / leverage
-
-if lang == "Urdu (اردو)":
-    st.subheader("🧮 فیوچرز پوزیشن سائز کیلکولیٹر (Futures Risk Calculator)")
-    st.info(f"💡 **رسک پالیسی:** اس ٹریڈ میں آپ کا زیادہ سے زیادہ نقصان **${max_loss:.2f}** سے زیادہ نہیں ہونا چاہیے۔")
-    st.write(f"👉 **تجویز کردہ پوزیشن سائز (Position Size):** `${suggested_position:.2f}`")
-    st.write(f"👉 **ضروری مارجن ({leverage}x Leverage):** `${required_margin:.2f}`")
-else:
-    st.subheader("🧮 Futures Position Size Calculator")
-    st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
-    st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
-    st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
 
 
