@@ -1,5 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import requests
+import pandas as pd
+import numpy as np
 
 # Page Configuration
 st.set_page_config(
@@ -7,6 +10,71 @@ st.set_page_config(
     page_icon="⚡",
     layout="wide"
 )
+
+# Function to fetch Binance Klines and calculate indicators
+def get_ai_signal(symbol):
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50"
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        
+        df = pd.DataFrame(data, columns=[
+            'time', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
+        ])
+        df['close'] = df['close'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        
+        current_price = df['close'].iloc[-1]
+        
+        # Calculate EMA
+        df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
+        df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
+        
+        # Calculate RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / (loss + 1e-10)
+        rsi = 100 - (100 / (1 + rs))
+        current_rsi = rsi.iloc[-1]
+        
+        ema9 = df['ema9'].iloc[-1]
+        ema21 = df['ema21'].iloc[-1]
+        
+        # Signal Decision
+        if current_rsi > 60 or ema9 < ema21:
+            signal_type = "SHORT 🔻"
+            color = "red"
+            tp1 = current_price * 0.985
+            tp2 = current_price * 0.970
+            sl = current_price * 1.015
+            reason = f"RSI: {current_rsi:.1f} (Bearish Signal / EMA Crossover Down)"
+            confidence = min(95, int(65 + abs(current_rsi - 50) + (10 if ema9 < ema21 else 0)))
+        else:
+            signal_type = "LONG 🟢"
+            color = "green"
+            tp1 = current_price * 1.015
+            tp2 = current_price * 1.030
+            sl = current_price * 0.985
+            reason = f"RSI: {current_rsi:.1f} (Bullish Signal / EMA Crossover Up)"
+            confidence = min(95, int(65 + abs(50 - current_rsi) + (10 if ema9 > ema21 else 0)))
+            
+        return {
+            "success": True,
+            "price": current_price,
+            "signal": signal_type,
+            "color": color,
+            "tp1": tp1,
+            "tp2": tp2,
+            "sl": sl,
+            "reason": reason,
+            "confidence": confidence,
+            "rsi": current_rsi
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # Sidebar Settings
 st.sidebar.title("⚙ Settings / سیٹنگز")
@@ -37,7 +105,42 @@ else:
     st.title(f"⚡ {coin_pair} AI Futures Trading Dashboard")
     st.caption("Binance Live TradingView Chart, AI Signals & Futures Risk Calculator")
 
+# AI Signal Section
+st.markdown("---")
+if lang == "Urdu (اردو)":
+    st.subheader("🎯 AI لائیو ٹریڈنگ سگنل (Live AI Signal)")
+    btn_label = f"🤖 {coin_pair} کا لائیو سگنل حاصل کریں (Generate Signal)"
+else:
+    st.subheader("🎯 Live AI Trading Signal")
+    btn_label = f"🤖 Generate {coin_pair} Signal"
+
+if st.button(btn_label, type="primary", use_container_width=True):
+    with st.spinner("Analyzing Binance Market Data..."):
+        sig = get_ai_signal(clean_symbol)
+        if sig["success"]:
+            st.session_state["last_signal"] = sig
+        else:
+            st.error("مارکیٹ ڈیٹا حاصل کرنے میں مسئلہ آیا۔ براہ کرم دوبارہ کوشش کریں۔")
+
+if "last_signal" in st.session_state:
+    sig = st.session_state["last_signal"]
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("کوائن قیمت (Current Price)", f"${sig['price']:.4f}")
+    col2.metric("AI سگنل (Signal)", sig["signal"])
+    col3.metric("ایکوریسی (Confidence)", f"{sig['confidence']}%")
+    col4.metric("RSI انڈیکیٹر", f"{sig['rsi']:.1f}")
+    
+    st.markdown("### 📋 ٹریڈنگ پلان (Trading Plan):")
+    c_tp1, c_tp2, c_sl = st.columns(3)
+    c_tp1.success(f"🎯 **Target 1 (TP1):** `${sig['tp1']:.4f}`")
+    c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.4f}`")
+    c_sl.error(f"🛑 **Stop Loss (SL):** `${sig['sl']:.4f}`")
+    
+    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']}")
+
 # TradingView Binance Live Chart
+st.markdown("---")
 if lang == "Urdu (اردو)":
     st.subheader("📈 بینانس لائیو کینڈل اسٹک چارٹ (Binance Real-Time Chart)")
 else:
@@ -95,4 +198,3 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
-
