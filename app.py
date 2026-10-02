@@ -45,8 +45,6 @@ def get_ai_signal(symbol):
         df['low'] = df['low'].astype(float)
         
         current_price = df['close'].iloc[-1]
-        h24 = df['high'].max()
-        l24 = df['low'].min()
         
         # Calculate EMA
         df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
@@ -66,6 +64,8 @@ def get_ai_signal(symbol):
         # Signal Decision
         if current_rsi > 60 or ema9 < ema21:
             signal_type = "SHORT 🔻"
+            entry_high = current_price
+            entry_low = current_price * 1.0015
             tp1 = current_price * 0.985
             tp2 = current_price * 0.970
             sl = current_price * 1.015
@@ -76,6 +76,8 @@ def get_ai_signal(symbol):
             rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
         else:
             signal_type = "LONG 🟢"
+            entry_low = current_price
+            entry_high = current_price * 1.0015
             tp1 = current_price * 1.015
             tp2 = current_price * 1.030
             sl = current_price * 0.985
@@ -88,8 +90,8 @@ def get_ai_signal(symbol):
         return {
             "success": True,
             "price": current_price,
-            "h24": h24,
-            "l24": l24,
+            "entry_low": entry_low,
+            "entry_high": entry_high,
             "signal": signal_type,
             "tp1": tp1,
             "tp2": tp2,
@@ -104,19 +106,13 @@ def get_ai_signal(symbol):
 
 # Sidebar Settings
 st.sidebar.title("⚙ Settings / سیٹنگز")
-
-# Language Selection
 lang = st.sidebar.radio("🌐 Select Language / زبان منتخب کریں", ["Urdu (اردو)", "English"])
-
-# Coin Selection
 coin_pair = st.sidebar.selectbox(
     "🪙 Select Crypto Pair / کوائن منتخب کریں",
     ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT"]
 )
-
 clean_symbol = coin_pair.replace("/", "")
 
-# Risk Management Settings
 st.sidebar.markdown("---")
 st.sidebar.subheader("💰 Risk Management / رسک مینجمنٹ")
 capital = st.sidebar.number_input("Capital ($) / کل سرمایہ", min_value=10.0, value=100.0, step=10.0)
@@ -158,6 +154,8 @@ if "last_signal" in st.session_state:
     col4.metric("رسک ریشو (R:R)", sig['rr_ratio'])
     
     st.markdown("### 📋 ٹریڈنگ پلان (Trading Plan):")
+    st.info(f"📍 **انٹری زون (Entry Zone):** `${sig['entry_low']:.2f} - ${sig['entry_high']:.2f}`")
+    
     c_tp1, c_tp2, c_sl = st.columns(3)
     c_tp1.success(f"🎯 **Target 1 (TP1):** `${sig['tp1']:.2f}`")
     c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.2f}`")
@@ -171,7 +169,7 @@ if "last_signal" in st.session_state:
     post_content = f"""🚨 {coin_pair} AI Futures Trading Signal 🚨
 
 Signal: {sig['signal']}
-Price: ${sig['price']:.2f}
+📍 Entry Zone: ${sig['entry_low']:.2f} -${sig['entry_high']:.2f}
 
 🎯 Target 1: ${sig['tp1']:.2f}
 🎯 Target 2: ${sig['tp2']:.2f}
@@ -245,3 +243,4 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
+
