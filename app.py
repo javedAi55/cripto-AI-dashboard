@@ -13,9 +13,9 @@ st.set_page_config(
 # Function to fetch Binance Klines with Fallbacks and calculate indicators
 def get_ai_signal(symbol):
     urls = [
-        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
-        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
-        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50"
+        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=100",
+        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=100",
+        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=100"
     ]
     
     headers = {
@@ -41,14 +41,8 @@ def get_ai_signal(symbol):
             'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
         df['close'] = df['close'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
         
         current_price = df['close'].iloc[-1]
-        
-        # Calculate EMA
-        df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
-        df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
         
         # Calculate RSI
         delta = df['close'].diff()
@@ -58,34 +52,64 @@ def get_ai_signal(symbol):
         rsi = 100 - (100 / (1 + rs))
         current_rsi = rsi.iloc[-1]
         
-        ema9 = df['ema9'].iloc[-1]
-        ema21 = df['ema21'].iloc[-1]
+        # Calculate MACD (DIF, DEA)
+        ema12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+        dif = ema12 - ema26
+        dea = dif.ewm(span=9, adjust=False).mean()
         
-        # Signal Decision
-        if current_rsi > 60 or ema9 < ema21:
+        current_dif = dif.iloc[-1]
+        current_dea = dea.iloc[-1]
+        
+        # Signal Logic combining RSI (30/70 Extreme Rules) & MACD
+        if current_rsi >= 65 or (current_dif < current_dea and current_rsi > 50):
             signal_type = "SHORT 🔻"
-            entry_high = current_price
-            entry_low = current_price * 1.0015
+            entry_low = current_price
+            entry_high = current_price * 1.0015
             tp1 = current_price * 0.985
             tp2 = current_price * 0.970
             sl = current_price * 1.015
-            reason = f"RSI: {current_rsi:.1f} (Bearish Reversal / EMA Downtrend)"
-            confidence = min(95, int(65 + abs(current_rsi - 50) + (10 if ema9 < ema21 else 0)))
+            
+            if current_rsi >= 65:
+                confidence = min(95, int(80 + (current_rsi - 65)))
+                reason = f"RSI Overbought Zone ({current_rsi:.1f}) + Bearish Reversal"
+            else:
+                confidence = 78
+                reason = f"MACD Bearish Crossover (DIF < DEA) | RSI: {current_rsi:.1f}"
+                
             risk = sl - current_price
             reward = current_price - tp1
             rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
-        else:
+
+        elif current_rsi <= 35 or (current_dif > current_dea and current_rsi <= 50):
             signal_type = "LONG 🟢"
             entry_low = current_price
             entry_high = current_price * 1.0015
             tp1 = current_price * 1.015
             tp2 = current_price * 1.030
             sl = current_price * 0.985
-            reason = f"RSI: {current_rsi:.1f} (Bullish Reversal / EMA Uptrend)"
-            confidence = min(95, int(65 + abs(50 - current_rsi) + (10 if ema9 > ema21 else 0)))
+            
+            if current_rsi <= 35:
+                confidence = min(95, int(80 + (35 - current_rsi)))
+                reason = f"RSI Oversold Zone ({current_rsi:.1f}) + Bullish Bounce"
+            else:
+                confidence = 82
+                reason = f"MACD Bullish Crossover (DIF > DEA) | RSI: {current_rsi:.1f}"
+                
             risk = current_price - sl
             reward = tp1 - current_price
             rr_ratio = f"1 : {abs(reward/risk):.1f}" if risk != 0 else "1 : 1.5"
+
+        else:
+            signal_type = "NEUTRAL / WAIT ⏳"
+            entry_low = current_price
+            entry_high = current_price
+            tp1 = current_price
+            tp2 = current_price
+            sl = current_price
+            confidence = 50
+            reason = f"RSI Neutral Zone ({current_rsi:.1f}) - Market Consolidation (Wait for Breakout)"
+            rr_ratio = "N/A"
             
         return {
             "success": True,
@@ -161,7 +185,7 @@ if "last_signal" in st.session_state:
     c_tp2.success(f"🎯 **Target 2 (TP2):** `${sig['tp2']:.2f}`")
     c_sl.error(f"🛑 **Stop Loss (SL):** `${sig['sl']:.2f}`")
     
-    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']} | RSI: {sig['rsi']:.1f}")
+    st.caption(f"📊 **تکنیکی تجزیہ (Technical Analysis):** {sig['reason']}")
     
     # Binance Square Ready-Made Post Generator
     st.markdown("---")
@@ -243,4 +267,5 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
+
 
