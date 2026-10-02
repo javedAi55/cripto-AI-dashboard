@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 # Sidebar Settings
-st.sidebar.title("⚙️️ Settings / سیٹنگز")
+st.sidebar.title("⚙ Settings / سیٹنگز")
 
 # Language Selection
 lang = st.sidebar.radio("🌐 Select Language / زبان منتخب کریں", ["Urdu (اردو)", "English"])
@@ -66,7 +66,7 @@ tv_widget_html = f"""
 """
 components.html(tv_widget_html, height=560)
 
-# Quick Trade Affiliate Buttons
+# Quick Trade Affiliate Buttons (Updated with user's Affiliate Link)
 st.markdown("---")
 if lang == "Urdu (اردو)":
     st.subheader("🔗 ایکسچینج پر ٹریڈ شروع کریں")
@@ -75,7 +75,7 @@ else:
 
 col1, col2 = st.columns(2)
 with col1:
-    st.link_button(f"🟡 Trade {coin_pair} on Binance", f"https://www.binance.com/en/futures/{clean_symbol}", use_container_width=True)
+    st.link_button(f"🟡 Trade {coin_pair} on Binance", "https://web3.binance.com/m/referral?ref=ZNV91XU8", use_container_width=True)
 with col2:
     st.link_button(f"🖤 Trade {coin_pair} on Bybit", f"https://www.bybit.com/trade/usdt/{clean_symbol}", use_container_width=True)
 
@@ -95,5 +95,4 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
-
 
