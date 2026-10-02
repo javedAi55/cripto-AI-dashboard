@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import requests
 import pandas as pd
-import numpy as np
 
 # Page Configuration
 st.set_page_config(
@@ -11,20 +10,38 @@ st.set_page_config(
     layout="wide"
 )
 
-# Function to fetch Binance Klines and calculate indicators
+# Function to fetch Binance Klines with Fallbacks and calculate indicators
 def get_ai_signal(symbol):
+    # Binance Public & Backup API Endpoints
+    urls = [
+        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
+        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50",
+        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50"
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    data = None
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                break
+        except Exception:
+            continue
+
+    if not data:
+        return {"success": False, "error": "Unable to connect to Binance market servers."}
+
     try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=50"
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        
         df = pd.DataFrame(data, columns=[
             'time', 'open', 'high', 'low', 'close', 'volume',
             'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
         df['close'] = df['close'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
         
         current_price = df['close'].iloc[-1]
         
@@ -46,26 +63,23 @@ def get_ai_signal(symbol):
         # Signal Decision
         if current_rsi > 60 or ema9 < ema21:
             signal_type = "SHORT 🔻"
-            color = "red"
             tp1 = current_price * 0.985
             tp2 = current_price * 0.970
             sl = current_price * 1.015
-            reason = f"RSI: {current_rsi:.1f} (Bearish Signal / EMA Crossover Down)"
+            reason = f"RSI: {current_rsi:.1f} (Bearish Trend / EMA Crossover Down)"
             confidence = min(95, int(65 + abs(current_rsi - 50) + (10 if ema9 < ema21 else 0)))
         else:
             signal_type = "LONG 🟢"
-            color = "green"
             tp1 = current_price * 1.015
             tp2 = current_price * 1.030
             sl = current_price * 0.985
-            reason = f"RSI: {current_rsi:.1f} (Bullish Signal / EMA Crossover Up)"
+            reason = f"RSI: {current_rsi:.1f} (Bullish Trend / EMA Crossover Up)"
             confidence = min(95, int(65 + abs(50 - current_rsi) + (10 if ema9 > ema21 else 0)))
             
         return {
             "success": True,
             "price": current_price,
             "signal": signal_type,
-            "color": color,
             "tp1": tp1,
             "tp2": tp2,
             "sl": sl,
@@ -198,3 +212,4 @@ else:
     st.info(f"💡 **Risk Rule:** Your maximum loss on this trade should not exceed **${max_loss:.2f}**.")
     st.write(f"👉 **Suggested Position Size:** `${suggested_position:.2f}`")
     st.write(f"👉 **Required Margin ({leverage}x Leverage):** `${required_margin:.2f}`")
+
