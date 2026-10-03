@@ -6,12 +6,24 @@ from datetime import datetime
 
 # Page Configuration
 st.set_page_config(
-    page_title="Ultra Pro Crypto AI & Telegram Signal Hub",
+    page_title="Ultra Pro Crypto AI Hub",
     page_icon="⚡",
     layout="wide"
 )
 
-# 1. Fetch Live Crypto Fear & Greed Index
+# 1. Animated Lottie Robot Function
+def show_animated_robot(width=200, height=200):
+    lottie_html = f"""
+    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
+        <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+        <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_t2xnqj5b.json" 
+            background="transparent" speed="1" style="width: {width}px; height: {height}px;" loop autoplay>
+        </lottie-player>
+    </div>
+    """
+    components.html(lottie_html, height=height + 20)
+
+# 2. Fetch Fear & Greed Index
 @st.cache_data(ttl=1800)
 def get_fear_and_greed():
     try:
@@ -22,7 +34,7 @@ def get_fear_and_greed():
     except:
         return "50", "Neutral"
 
-# 2. Function to Send Telegram Alerts
+# 3. Send Telegram Alert
 def send_telegram_alert(bot_token, chat_id, message_text):
     if not bot_token or not chat_id:
         return False, "براہ کرم سائیڈ بار میں Bot Token اور Chat ID درج کریں۔"
@@ -38,13 +50,12 @@ def send_telegram_alert(bot_token, chat_id, message_text):
     except Exception as e:
         return False, f"رابطے میں ناکامی: {str(e)}"
 
-# 3. Binance Advanced Multi-Timeframe AI Analysis Engine
+# 4. Binance AI Engine (With Entry Zone)
 def get_ai_analysis(symbol, interval="15m"):
     clean_sym = symbol.replace("/", "")
     urls = [
         f"https://data-api.binance.vision/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100",
-        f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100",
-        f"https://api1.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
+        f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
     ]
     
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -72,96 +83,61 @@ def get_ai_analysis(symbol, interval="15m"):
         
         current_price = df['close'].iloc[-1]
         
-        # Calculate Support & Resistance (Pivot Points)
-        high_p = df['high'].iloc[-2]
-        low_p = df['low'].iloc[-2]
-        close_p = df['close'].iloc[-2]
+        # Support & Resistance (Pivot)
+        high_p, low_p, close_p = df['high'].iloc[-2], df['low'].iloc[-2], df['close'].iloc[-2]
         pivot = (high_p + low_p + close_p) / 3
-        r1 = (2 * pivot) - low_p
-        s1 = (2 * pivot) - high_p
-        r2 = pivot + (high_p - low_p)
-        s2 = pivot - (high_p - low_p)
+        r1, s1 = (2 * pivot) - low_p, (2 * pivot) - high_p
+        r2, s2 = pivot + (high_p - low_p), pivot - (high_p - low_p)
         
-        # RSI
+        # Indicators
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / (loss + 1e-10)
-        rsi = 100 - (100 / (1 + rs))
+        rsi = 100 - (100 / (1 + (gain / (loss + 1e-10))))
         current_rsi = rsi.iloc[-1]
         
-        # MACD
-        ema12 = df['close'].ewm(span=12, adjust=False).mean()
-        ema26 = df['close'].ewm(span=26, adjust=False).mean()
-        dif = ema12 - ema26
-        dea = dif.ewm(span=9, adjust=False).mean()
-        
-        # EMA
         ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
         
-        bull_score = 0
-        bear_score = 0
-        reasons = []
-
-        if current_rsi < 35:
-            bull_score += 40
-            reasons.append(f"🟢 RSI Oversold ({current_rsi:.1f})")
-        elif current_rsi > 65:
-            bear_score += 40
-            reasons.append(f"🔴 RSI Overbought ({current_rsi:.1f})")
-        else:
-            if current_rsi > 50: bull_score += 15
-            else: bear_score += 15
-
-        if dif.iloc[-1] > dea.iloc[-1]:
-            bull_score += 30
-            reasons.append("🟢 MACD Bullish Crossover")
-        else:
-            bear_score += 30
-            reasons.append("🔴 MACD Bearish Crossover")
-
-        if current_price > ema20:
-            bull_score += 30
-            reasons.append("🟢 Price above EMA20 (Uptrend)")
-        else:
-            bear_score += 30
-            reasons.append("🔴 Price below EMA20 (Downtrend)")
-
-        total = bull_score + bear_score
-        bull_prob = int((bull_score / total) * 100) if total > 0 else 50
+        bull_prob = 70 if (current_rsi < 40 and current_price > ema20) else 40
         bear_prob = 100 - bull_prob
 
-        # Multi-Timeframe Status
-        if bull_prob >= 70:
-            mtf_status = "🔥 STRONG BULLISH CONFLUENCE (High Win Rate)"
+        # Signal Logic with ENTRY ZONE
+        entry_low = current_price * 0.999
+        entry_high = current_price * 1.001
+        
+        if bull_prob >= 65:
+            mtf_status = "🔥 STRONG BULLISH CONFLUENCE"
             sig = "LONG 🟢"
             tp1, tp2, sl = current_price * 1.015, current_price * 1.028, current_price * 0.985
-            candle_pred = "🟢 GREEN CANDLE"
-            pred_prob = bull_prob
-        elif bear_prob >= 70:
-            mtf_status = "🔻 STRONG BEARISH CONFLUENCE (High Win Rate)"
+            candle_pred, pred_prob = "🟢 GREEN CANDLE", bull_prob
+        elif bear_prob >= 65:
+            mtf_status = "🔻 STRONG BEARISH CONFLUENCE"
             sig = "SHORT 🔴"
             tp1, tp2, sl = current_price * 0.985, current_price * 0.972, current_price * 1.015
-            candle_pred = "🔴 RED CANDLE"
-            pred_prob = bear_prob
+            candle_pred, pred_prob = "🔴 RED CANDLE", bear_prob
         else:
-            mtf_status = "⚖️ SIDEWAYS / NEUTRAL ZONE"
+            mtf_status = "⚖️ NEUTRAL / SIDEWAYS"
             sig = "WAIT ⏳"
             tp1 = tp2 = sl = current_price
-            candle_pred = "⚖️ NEUTRAL"
-            pred_prob = 50
+            candle_pred, pred_prob = "⚖️ NEUTRAL", 50
 
         return {
             "success": True, "price": current_price, "rsi": current_rsi, "signal": sig,
-            "candle_pred": candle_pred, "pred_prob": pred_prob, "reasons": reasons,
+            "candle_pred": candle_pred, "pred_prob": pred_prob,
+            "entry_low": entry_low, "entry_high": entry_high,
             "tp1": tp1, "tp2": tp2, "sl": sl, "bull_prob": bull_prob, "bear_prob": bear_prob,
-            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pivot": pivot, "mtf": mtf_status
+            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "mtf": mtf_status
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# --- Sidebar ---
+# --- Sidebar Controls ---
 st.sidebar.title("⚙️ کنٹرول پینل")
+
+# Animated Robot on Sidebar
+with st.sidebar:
+    show_animated_robot(150, 150)
+
 coin_pair = st.sidebar.selectbox(
     "🪙 کوائن منتخب کریں",
     ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "PEPE/USDT"]
@@ -175,59 +151,51 @@ st.sidebar.subheader("📲 ٹیلی گرام الرٹ سیٹنگز")
 telegram_token = st.sidebar.text_input("Bot Token", type="password")
 telegram_chat_id = st.sidebar.text_input("Chat ID / Channel @Username")
 
-# Session State for Signal History
 if "history" not in st.session_state:
     st.session_state["history"] = []
 
-# --- Main Interface ---
-st.title(f"⚡ {coin_pair} Ultra Pro AI Signal & Analysis Hub")
+# --- Main Layout ---
+col_head, col_anim = st.columns([3, 1])
 
-# Feature 1: Fear & Greed Meter
-fg_val, fg_cls = get_fear_and_greed()
-st.info(f"📊 **Crypto Fear & Greed Index:** {fg_val}/100 ({fg_cls})")
+with col_head:
+    st.title(f"⚡ {coin_pair} Ultra Pro AI Hub")
+    fg_val, fg_cls = get_fear_and_greed()
+    st.info(f"📊 **Crypto Fear & Greed Index:** {fg_val}/100 ({fg_cls})")
 
-if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
-    with st.spinner("بینانس اور انڈیکیٹرز کا ملٹی ٹائم فریم تجزیہ ہو رہا ہے..."):
-        res = get_ai_analysis(clean_symbol, tf_param)
-        if res["success"]:
-            st.session_state["analysis"] = res
-            # Append to History
-            st.session_state["history"].prepend if False else st.session_state["history"].insert(0, {
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "coin": coin_pair,
-                "signal": res["signal"],
-                "price": f"${res['price']:,.2f}",
-                "prob": f"{res['pred_prob']}%"
-            })
-        else:
-            st.error(res["error"])
+with col_anim:
+    # Main Dashboard Robot
+    show_animated_robot(120, 120)
 
-if "analysis" in st.session_state:
-    data = st.session_state["analysis"]
-    
+# Auto-Fetch Data
+res = get_ai_analysis(clean_symbol, tf_param)
+
+if res["success"]:
+    data = res
     st.markdown("---")
-    
-    # Feature 3: Multi-Timeframe Confluence Alert Box
     st.warning(f"🌐 **Multi-Timeframe Analysis:** {data['mtf']}")
     
     c1, c2, c3 = st.columns(3)
     c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
     c2.metric("اگلی کینڈل کا امکان", data["candle_pred"])
     c3.metric("سگنل کی طاقت", f"{data['pred_prob']}%")
-    
     st.progress(data["bull_prob"] / 100)
 
-    # Feature 2: Support & Resistance Levels
+    # Support & Resistance Levels
     st.markdown("---")
-    st.markdown("### 🧱 خودکار سپورٹ اور ریزسٹنس (Support & Resistance Levels)")
+    st.markdown("### 🧱 خودکار سپورٹ اور ریزسٹنس")
     sr1, sr2, sr3, sr4 = st.columns(4)
-    sr1.error(f"🔴 **Resistance 2:**\n${data['r2']:,.4f}")
-    sr2.error(f"🔴 **Resistance 1:**\n${data['r1']:,.4f}")
-    sr3.success(f"🟢 **Support 1:**\n${data['s1']:,.4f}")
-    sr4.success(f"🟢 **Support 2:**\n${data['s2']:,.4f}")
+    sr1.error(f"🔴 Resistance 2:\n${data['r2']:,.4f}")
+    sr2.error(f"🔴 Resistance 1:\n${data['r1']:,.4f}")
+    sr3.success(f"🟢 Support 1:\n${data['s1']:,.4f}")
+    sr4.success(f"🟢 Support 2:\n${data['s2']:,.4f}")
 
+    # Trade Setup Targets WITH ENTRY ZONE
     st.markdown("---")
     st.markdown("### 🎯 تجویز کردہ ٹریڈ سیٹ اپ")
+    
+    # NEW ENTRY ZONE BOX
+    st.info(f"📍 **Entry Zone (یہاں انٹری لیں):** ${data['entry_low']:,.4f} -${data['entry_high']:,.4f}")
+    
     tc1, tc2, tc3 = st.columns(3)
     tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
     tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
@@ -238,34 +206,24 @@ if "analysis" in st.session_state:
     st.markdown("### 📲 ٹیلی گرام پر الرٹ بھیجیں")
     alert_msg = f"""🚨 *PRO AI SIGNAL ALERT* 🚨
 Pair: *{coin_pair}* ({tf_param})
+Direction: *{data['signal']}* 
+Entry: *${data['entry_low']:,.4f} -${data['entry_high']:,.4f}*
 
-Direction: *{data['signal']}*
-Price: *${data['price']:,.4f}*
-Confluence: *{data['mtf']}*
-
-🎯 TP1: `${data['tp1']:,.4f}`
-🎯 TP2: `${data['tp2']:,.4f}`
+🎯 TP1: `${data['tp1']:,.4f}` | 🎯 TP2: `${data['tp2']:,.4f}`
 🛑 SL: `${data['sl']:,.4f}`
-
-📊 Strength: {data['pred_prob']}% | RSI: {data['rsi']:.1f}
 
 👇 Trade on Binance:
 https://web3.binance.com/m/referral?ref=ZNV91XU8"""
 
-    if st.button("🚀 Send Signal to Telegram Channel / Group", type="secondary"):
+    if st.button("🚀 Send Signal to Telegram Channel", type="secondary"):
         status, msg = send_telegram_alert(telegram_token, telegram_chat_id, alert_msg)
-        if status:
-            st.success(msg)
-        else:
-            st.error(msg)
+        if status: st.success(msg)
+        else: st.error(msg)
 
-# Feature 4: Signal History Tracker Table
-if st.session_state["history"]:
-    st.markdown("---")
-    st.markdown("### 📝 سگنل ہسٹری اور ٹریکر (Recent Signals Tracker)")
-    st.dataframe(pd.DataFrame(st.session_state["history"][:5]), use_container_width=True)
+else:
+    st.error(res["error"])
 
-# Live TradingView Chart
+# Live Chart
 st.markdown("---")
 st.markdown(f"### 📈 {coin_pair} لائیو چارٹ")
 tv_widget = f"""
@@ -279,16 +237,10 @@ tv_widget = f"""
     "interval": "{15 if tf_param == '15m' else 60}",
     "theme": "dark",
     "style": "1",
-    "locale": "en",
     "container_id": "tradingview_chart"
   }});
   </script>
 </div>
 """
 components.html(tv_widget, height=520)
-
-
-
-
-
 
