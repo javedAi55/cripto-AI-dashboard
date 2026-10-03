@@ -3,19 +3,32 @@ import streamlit.components.v1 as components
 import requests
 import pandas as pd
 
-# Page Configuration
+# 1. Page Configuration (Premium Look)
 st.set_page_config(
-    page_title="Crypto AI Futures & Candle Predictor",
+    page_title="Pro Crypto AI Predictor",
     page_icon="⚡",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Function to fetch Binance Data & Calculate Advanced Signal + Candle Prediction
+# 2. Function to Auto-Fetch Top Volume Coins from Binance
+@st.cache_data(ttl=300) # 5 منٹ تک ڈیٹا کیش کرے گا تاکہ ویب سائٹ سلو نہ ہو
+def get_top_volume_coins():
+    try:
+        url = "https://api.binance.com/api/v3/ticker/24hr"
+        res = requests.get(url, timeout=5).json()
+        usdt_pairs = [x for x in res if x['symbol'].endswith('USDT') and 'UP' not in x['symbol'] and 'DOWN' not in x['symbol']]
+        sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x['quoteVolume']), reverse=True)
+        return [f"{x['symbol'][: -4]}/{x['symbol'][-4:]}" for x in sorted_pairs[:10]]
+    except:
+        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"]
+
+# 3. AI Analysis Function
 def get_ai_analysis(symbol, interval="15m"):
+    clean_sym = symbol.replace("/", "")
     urls = [
-        f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={interval}&limit=100",
-        f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=100",
-        f"https://api3.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=100"
+        f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100",
+        f"https://api1.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
     ]
     
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -38,14 +51,10 @@ def get_ai_analysis(symbol, interval="15m"):
             'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
         df['close'] = df['close'].astype(float)
-        df['open'] = df['open'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['volume'] = df['volume'].astype(float)
         
         current_price = df['close'].iloc[-1]
         
-        # 1. RSI Calculation
+        # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -53,135 +62,97 @@ def get_ai_analysis(symbol, interval="15m"):
         rsi = 100 - (100 / (1 + rs))
         current_rsi = rsi.iloc[-1]
         
-        # 2. MACD Calculation
+        # MACD
         ema12 = df['close'].ewm(span=12, adjust=False).mean()
         ema26 = df['close'].ewm(span=26, adjust=False).mean()
         dif = ema12 - ema26
         dea = dif.ewm(span=9, adjust=False).mean()
-        current_dif = dif.iloc[-1]
-        current_dea = dea.iloc[-1]
         
-        # 3. EMA 20 & 50 Trend
+        # EMA
         ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-        ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
         
-        # Next Candle Prediction Logic (Probability Score)
-        bullish_score = 0
-        bearish_score = 0
+        # Logic
+        bull_score = 0
+        bear_score = 0
         reasons = []
 
-        # RSI Checks
         if current_rsi < 35:
-            bullish_score += 35
-            reasons.append(f"RSI Oversold ({current_rsi:.1f}) - بائنگ پریشر کی توقع")
+            bull_score += 40
+            reasons.append(f"🟢 RSI Oversold ({current_rsi:.1f})")
         elif current_rsi > 65:
-            bearish_score += 35
-            reasons.append(f"RSI Overbought ({current_rsi:.1f}) - سیلنگ پریشر کی توقع")
+            bear_score += 40
+            reasons.append(f"🔴 RSI Overbought ({current_rsi:.1f})")
         else:
-            if current_rsi > 50:
-                bullish_score += 15
-            else:
-                bearish_score += 15
+            if current_rsi > 50: bull_score += 15
+            else: bear_score += 15
 
-        # MACD Checks
-        if current_dif > current_dea:
-            bullish_score += 30
-            reasons.append("MACD Bullish Crossover (DIF > DEA)")
+        if dif.iloc[-1] > dea.iloc[-1]:
+            bull_score += 30
+            reasons.append("🟢 MACD Bullish Crossover")
         else:
-            bearish_score += 30
-            reasons.append("MACD Bearish Crossover (DIF < DEA)")
+            bear_score += 30
+            reasons.append("🔴 MACD Bearish Crossover")
 
-        # EMA Trend Check
         if current_price > ema20:
-            bullish_score += 25
-            reasons.append("قیمت EMA(20) سے اوپر ہے (Upward Trend)")
+            bull_score += 30
+            reasons.append("🟢 Price above EMA20 (Uptrend)")
         else:
-            bearish_score += 25
-            reasons.append("قیمت EMA(20) سے نیچے ہے (Downward Trend)")
+            bear_score += 30
+            reasons.append("🔴 Price below EMA20 (Downtrend)")
 
-        # Normalize Probability
-        total = bullish_score + bearish_score
-        bull_prob = int((bullish_score / total) * 100) if total > 0 else 50
+        total = bull_score + bear_score
+        bull_prob = int((bull_score / total) * 100) if total > 0 else 50
         bear_prob = 100 - bull_prob
 
-        if bull_prob >= 60:
-            candle_pred = "🟢 GREEN CANDLE (Bullish)"
-            pred_color = "green"
-            pred_prob = bull_prob
-        elif bear_prob >= 60:
-            candle_pred = "🔴 RED CANDLE (Bearish)"
-            pred_color = "red"
-            pred_prob = bear_prob
-        else:
-            candle_pred = "⚖️ SIDEWAYS / NEUTRAL"
-            pred_color = "orange"
-            pred_prob = 50
-
-        # Signal Logic
+        # Signal Output Generation
+        is_bullish = bull_prob >= 60
+        is_bearish = bear_prob >= 60
+        
+        candle_pred = "🟢 GREEN (Bullish)" if is_bullish else "🔴 RED (Bearish)" if is_bearish else "⚖️ NEUTRAL"
+        pred_prob = bull_prob if is_bullish else bear_prob if is_bearish else 50
+        
         if bull_prob >= 65:
-            signal_type = "LONG 🟢"
-            entry_low = current_price
-            entry_high = current_price * 1.0015
-            tp1 = current_price * 1.012
-            tp2 = current_price * 1.025
-            sl = current_price * 0.988
+            sig = "LONG 🟢"
+            tp1, tp2, sl = current_price * 1.015, current_price * 1.025, current_price * 0.985
         elif bear_prob >= 65:
-            signal_type = "SHORT 🔻"
-            entry_low = current_price
-            entry_high = current_price * 1.0015
-            tp1 = current_price * 0.988
-            tp2 = current_price * 0.975
-            sl = current_price * 1.012
+            sig = "SHORT 🔴"
+            tp1, tp2, sl = current_price * 0.985, current_price * 0.975, current_price * 1.015
         else:
-            signal_type = "WAIT ⏳ (انتقال زون)"
-            entry_low = current_price
-            entry_high = current_price
-            tp1 = current_price
-            tp2 = current_price
-            sl = current_price
+            sig = "WAIT ⏳"
+            tp1 = tp2 = sl = current_price
 
         return {
-            "success": True,
-            "price": current_price,
-            "rsi": current_rsi,
-            "signal": signal_type,
-            "candle_pred": candle_pred,
-            "pred_color": pred_color,
-            "pred_prob": pred_prob,
-            "reasons": reasons,
-            "entry_low": entry_low,
-            "entry_high": entry_high,
-            "tp1": tp1,
-            "tp2": tp2,
-            "sl": sl,
-            "bull_prob": bull_prob,
-            "bear_prob": bear_prob
+            "success": True, "price": current_price, "rsi": current_rsi, "signal": sig,
+            "candle_pred": candle_pred, "pred_prob": pred_prob, "reasons": reasons,
+            "tp1": tp1, "tp2": tp2, "sl": sl, "bull_prob": bull_prob, "bear_prob": bear_prob
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# Sidebar Controls
-st.sidebar.title("⚙️️ سیٹنگز (Settings)")
-coin_pair = st.sidebar.selectbox("🪙 کوائن منتخب کریں", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT"])
-timeframe = st.sidebar.selectbox("⏱️ کینڈل ٹائم فریم (Timeframe)", ["15m (بہترین فورن ٹریڈ)", "1h (زیادہ کنفرم)"], index=0)
+# --- Sidebar (Settings) ---
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/1/12/Binance_logo.svg", width=150)
+st.sidebar.title("⚙️ کنٹرول پینل")
+
+st.sidebar.markdown("### 🔍 کوائن سلیکشن")
+selection_mode = st.sidebar.radio("کوائن کیسے منتخب کریں؟", ["آٹو ٹرینڈنگ (Top Volume)", "اپنی مرضی سے (Custom)"])
+
+if selection_mode == "آٹو ٹرینڈنگ (Top Volume)":
+    top_coins = get_top_volume_coins()
+    coin_pair = st.sidebar.selectbox("🔥 ٹاپ 10 والیوم کوائنز:", top_coins)
+else:
+    custom_list = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "ADA/USDT", "INJ/USDT", "LINK/USDT"]
+    coin_pair = st.sidebar.selectbox("🪙 اپنی مرضی کا کوائن چنیں:", custom_list)
+
+timeframe = st.sidebar.selectbox("⏱️ کینڈل ٹائم فریم", ["15m (Scalping)", "1h (Day Trading)"])
 clean_symbol = coin_pair.replace("/", "")
 tf_param = "15m" if "15m" in timeframe else "1h"
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("💰 پوزیشن سائز کیلکولیٹر")
-capital = st.sidebar.number_input("کل سرمایہ ($)", min_value=10.0, value=100.0, step=10.0)
-risk_pct = st.sidebar.slider("فی ٹریڈ رسک (%)", min_value=0.5, max_value=5.0, value=2.0)
-leverage = st.sidebar.slider("لیوریج (Leverage)", min_value=1, max_value=20, value=3)
+# --- Main Dashboard ---
+st.title(f"⚡ {coin_pair} پریمیم AI سگنل ڈیش بورڈ")
+st.markdown("آرٹیفیشل انٹیلیجنس اور تکنیکی انڈیکیٹرز کی مدد سے لائیو مارکیٹ تجزیہ۔")
 
-# Dashboard Title
-st.title(f"⚡ {coin_pair} AI کینڈل پریڈکٹر اور ٹریڈنگ ڈیش بورڈ")
-st.caption(f"لائیو بینانس ڈیٹا | ٹائم فریم: {tf_param}")
-
-st.markdown("---")
-st.subheader("🔮 اگلی کینڈل کا AI اندازہ (Next Candle Predictor)")
-
-if st.button("🤖 لائیو کینڈل اور ٹریڈ سگنل چیک کریں", type="primary", use_container_width=True):
-    with st.spinner("بینانس کینڈلز اور انڈیکیٹرز کا تجزیہ ہو رہا ہے..."):
+if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
+    with st.spinner(f"{coin_pair} کا لائیو ڈیٹا بینانس سے لایا جا رہا ہے..."):
         res = get_ai_analysis(clean_symbol, tf_param)
         if res["success"]:
             st.session_state["analysis"] = res
@@ -191,69 +162,78 @@ if st.button("🤖 لائیو کینڈل اور ٹریڈ سگنل چیک کری�
 if "analysis" in st.session_state:
     data = st.session_state["analysis"]
     
-    # Candle Prediction Banner
-    col1, col2, col3 = st.columns(3)
-    col1.metric("موجودہ قیمت (Price)", f"${data['price']:.2f}")
-    col2.metric("اگلی کینڈل کا امکان", data["candle_pred"])
-    col3.metric("امکان کی شرح (Probability)", f"{data['pred_prob']}%")
+    st.markdown("---")
+    
+    # Premium Metric Cards
+    c1, c2, c3 = st.columns(3)
+    c1.metric("💰 موجودہ قیمت (Live Price)", f"${data['price']:,.4f}")
+    c2.metric("🔮 اگلی کینڈل (Next Candle)", data["candle_pred"])
+    c3.metric("🎯 سگنل کی طاقت (Strength)", f"{data['pred_prob']}%")
     
     st.progress(data["bull_prob"] / 100)
-    st.caption(f"📈 🟢 Bullish Probability: {data['bull_prob']}%  |  📉 🔴 Bearish Probability: {data['bear_prob']}%")
+    st.caption(f"📈 🟢 Bullish: {data['bull_prob']}%  |  📉 🔴 Bearish: {data['bear_prob']}%")
     
-    st.markdown("#### 🔍 تکنیکی دلائل (Technical Reasons):")
+    st.markdown("### 📊 تکنیکی وجوہات (Technical Analysis)")
     for r in data["reasons"]:
-        st.write(f"• {r}")
+        st.write(f"👉 {r}")
 
     st.markdown("---")
-    st.subheader("🎯 مجوزہ AI ٹریڈنگ سگنل")
+    st.markdown("### 🎯 پروفیشنل ٹریڈ سیٹ اپ")
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.info(f"📍 **Entry Zone:**\n${data['entry_low']:.2f} - ${data['entry_high']:.2f}")
-    c2.success(f"🎯 **Target 1:**\n${data['tp1']:.2f}")
-    c3.success(f"🎯 **Target 2:**\n${data['tp2']:.2f}")
-    c4.error(f"🛑 **Stop Loss:**\n${data['sl']:.2f}")
+    tc1, tc2, tc3 = st.columns(3)
+    tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
+    tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
+    tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
 
-    # Binance Square Ready Post
-    st.markdown("---")
-    st.markdown("### 📢 بینانس اسکوائر پوسٹ (1-Click Copy)")
-    post_text = f"""🚨 {coin_pair} ({tf_param}) Candle & Trade Analysis 🚨
+    # Auto-Generated Binance Square Post
+    with st.expander("📢 بینانس اسکوائر پوسٹ کاپی کریں (Binance Square Post)"):
+        post_text = f"""🚨 {coin_pair} {tf_param} AI Trading Setup 🚨
 
-🔮 Next Candle Projection: {data['candle_pred']} ({data['pred_prob']}% Probability)
-📍 Entry Zone: ${data['entry_low']:.2f} - ${data['entry_high']:.2f}
+🔮 Trend Prediction: {data['candle_pred']} ({data['pred_prob']}% Strength)
+💵 Current Price: ${data['price']:,.4f}
 
-🎯 TP1: ${data['tp1']:.2f} | 🎯 TP2: ${data['tp2']:.2f}
-🛑 SL: ${data['sl']:.2f}
+🎯 TP1: ${data['tp1']:,.4f}
+🎯 TP2: ${data['tp2']:,.4f}
+🛑 SL: ${data['sl']:,.4f}
 
-📊 RSI: {data['rsi']:.1f}
+📊 AI Insights:
+- RSI: {data['rsi']:.1f}
 
-👇 Trade on Binance:
+🔗 Trade on Binance using my link:
 https://web3.binance.com/m/referral?ref=ZNV91XU8
 
-#Crypto #Binance #{clean_symbol} #Signals"""
+#Crypto #Binance #{clean_symbol} #TradingSignals"""
+        st.code(post_text, language="markdown")
 
-    st.code(post_text, language="markdown")
-
-# Live TradingView Chart
+# --- Live TradingView Chart ---
 st.markdown("---")
-st.subheader("📈 بینانس لائیو چارٹ")
+st.markdown(f"### 📈 {coin_pair} لائیو چارٹ (TradingView)")
 tv_widget = f"""
-<div class="tradingview-widget-container" style="height:500px;width:100%;">
-  <div id="tradingview_chart" style="height:500px;width:100%;"></div>
+<div class="tradingview-widget-container" style="height:550px;width:100%;">
+  <div id="tradingview_chart" style="height:550px;width:100%;"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget({{
     "autosize": true,
     "symbol": "BINANCE:{clean_symbol}",
     "interval": "{15 if tf_param == '15m' else 60}",
+    "timezone": "Etc/UTC",
     "theme": "dark",
     "style": "1",
     "locale": "en",
+    "enable_publishing": false,
+    "backgroundColor": "#131722",
+    "gridColor": "#1f293d",
+    "hide_top_toolbar": false,
+    "hide_legend": false,
+    "save_image": false,
     "container_id": "tradingview_chart"
   }});
   </script>
 </div>
 """
-components.html(tv_widget, height=520)
+components.html(tv_widget, height=580)
+
 
 
 
