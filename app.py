@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-import numpy as np
 from datetime import datetime
 
 # Page Configuration
@@ -46,10 +45,10 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         
         current_price = df['close'].iloc[-1]
         
-        # 1. Volatility (ATR - Average True Range)
+        # 1. Volatility (ATR - Average True Range without Numpy)
         df['H-L'] = df['high'] - df['low']
-        df['H-PC'] = abs(df['high'] - df['close'].shift(1))
-        df['L-PC'] = abs(df['low'] - df['close'].shift(1))
+        df['H-PC'] = (df['high'] - df['close'].shift(1)).abs()
+        df['L-PC'] = (df['low'] - df['close'].shift(1)).abs()
         df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
         atr = df['TR'].rolling(14).mean().iloc[-1]
 
@@ -133,7 +132,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         max_leverage = int((position_size_usd / capital) * 1.2) if capital > 0 else 1
         max_leverage = max(1, min(max_leverage, 15)) # Limit leverage between 1x and 15x safely
 
-        # 5. strict REJECTION RULES (Kill Switch)
+        # 5. Strict REJECTION RULES (Kill Switch)
         final_signal = trade_dir
         warning_msg = ""
         if setup_score < 65:
@@ -225,6 +224,7 @@ if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنر�
                 st.markdown("### 🧠 Why this trade? (یہ ٹریڈ کیوں لی جائے؟)")
                 for idx, reason in enumerate(data['reasons'], 1):
                     st.write(f"{idx}. {reason}")
+
 
 
 
