@@ -1,16 +1,17 @@
 import streamlit as st
 import requests
 import pandas as pd
+import numpy as np
 from datetime import datetime
 
 # Page Configuration
 st.set_page_config(
-    page_title="Ultra Pro Crypto AI Hub",
+    page_title="Institutional AI Futures Advisor",
     page_icon="🦅",
     layout="wide"
 )
 
-# 1. Animal Animations (100% Working GIFs)
+# --- Animations ---
 def show_eagle():
     st.markdown("""
     <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
@@ -25,205 +26,206 @@ def show_lion():
     </div>
     """, unsafe_allow_html=True)
 
-# 2. Fetch Fear & Greed Index
-@st.cache_data(ttl=1800)
-def get_fear_and_greed():
-    try:
-        res = requests.get("https://api.alternative.me/fng/", timeout=5).json()
-        val = res['data'][0]['value']
-        cls = res['data'][0]['value_classification']
-        return val, cls
-    except:
-        return "50", "Neutral"
-
-# 3. Send Telegram Alert
-def send_telegram_alert(bot_token, chat_id, message_text):
-    if not bot_token or not chat_id:
-        return False, "براہ کرم سائیڈ بار میں Bot Token اور Chat ID درج کریں۔"
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message_text, "parse_mode": "Markdown"}
-    try:
-        res = requests.post(url, json=payload, timeout=5)
-        if res.status_code == 200: return True, "ٹیلی گرام پر سگنل چلا گیا! 🚀"
-        else: return False, f"ٹیلی گرام ایرر: {res.text}"
-    except Exception as e:
-        return False, f"رابطے میں ناکامی: {str(e)}"
-
-# 4. Binance AI Engine
-def get_ai_analysis(symbol, interval="15m"):
+# --- Advanced Quant Engine ---
+def get_institutional_analysis(symbol, interval, capital, risk_pct):
     clean_sym = symbol.replace("/", "")
-    urls = [
-        f"https://data-api.binance.vision/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100",
-        f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
-    ]
+    # Using Binance Futures API (fapi)
+    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={clean_sym}&interval={interval}&limit=100"
     
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    data = None
-    for url in urls:
-        try:
-            res = requests.get(url, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                break
-        except Exception:
-            continue
-
-    if not data: return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code != 200: return {"success": False, "error": "فیوچرز API سے رابطہ نہیں ہو سکا۔"}
+        data = res.json()
+    except:
+        return {"success": False, "error": "انٹرنیٹ یا سرور کا مسئلہ۔"}
 
     try:
-        df = pd.DataFrame(data, columns=[
-            'time', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
-        ])
-        df['close'] = df['close'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
+        df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = df[col].astype(float)
         
         current_price = df['close'].iloc[-1]
         
-        # Pivot Points
-        high_p, low_p, close_p = df['high'].iloc[-2], df['low'].iloc[-2], df['close'].iloc[-2]
-        pivot = (high_p + low_p + close_p) / 3
-        r1, s1 = (2 * pivot) - low_p, (2 * pivot) - high_p
-        r2, s2 = pivot + (high_p - low_p), pivot - (high_p - low_p)
-        
-        # Indicators
+        # 1. Volatility (ATR - Average True Range)
+        df['H-L'] = df['high'] - df['low']
+        df['H-PC'] = abs(df['high'] - df['close'].shift(1))
+        df['L-PC'] = abs(df['low'] - df['close'].shift(1))
+        df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+        atr = df['TR'].rolling(14).mean().iloc[-1]
+
+        # 2. Indicators (RSI, MACD, EMA)
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rsi = 100 - (100 / (1 + (gain / (loss + 1e-10))))
-        current_rsi = rsi.iloc[-1]
+        rsi = 100 - (100 / (1 + (gain / (loss + 1e-10)))).iloc[-1]
         
         ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
         
-        bull_prob = 70 if (current_rsi < 40 and current_price > ema20) else 40
-        bear_prob = 100 - bull_prob
+        macd_line = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd_hist = macd_line.iloc[-1] - signal_line.iloc[-1]
 
-        # Signal Logic
-        entry_low = current_price * 0.999
-        entry_high = current_price * 1.001
+        # 3. Setup Quality Scoring (0-100)
+        setup_score = 0
+        reasons = []
+        trade_dir = "NEUTRAL"
+
+        # Bullish Scoring
+        if current_price > ema20 and ema20 > ema50:
+            setup_score += 25
+            reasons.append("مارکیٹ کا ٹرینڈ مضبوط Bullish ہے (Price > EMA20 > EMA50)۔")
+            trade_dir = "LONG"
+        if rsi > 40 and rsi < 70:
+            setup_score += 25
+            reasons.append(f"RSI ({rsi:.1f}) میں اوپر جانے کی گنجائش موجود ہے۔")
+        if macd_hist > 0:
+            setup_score += 25
+            reasons.append("MACD مومنٹم مثبت (Positive) ہے۔")
         
-        if bull_prob >= 65:
-            mtf_status = "🔥 STRONG BULLISH CONFLUENCE"
-            sig = "LONG 🟢"
-            tp1, tp2, sl = current_price * 1.015, current_price * 1.028, current_price * 0.985
-            candle_pred, pred_prob = "🟢 GREEN CANDLE", bull_prob
-        elif bear_prob >= 65:
-            mtf_status = "🔻 STRONG BEARISH CONFLUENCE"
-            sig = "SHORT 🔴"
-            tp1, tp2, sl = current_price * 0.985, current_price * 0.972, current_price * 1.015
-            candle_pred, pred_prob = "🔴 RED CANDLE", bear_prob
+        # Bearish Scoring (Override if conditions apply)
+        bear_score = 0
+        bear_reasons = []
+        if current_price < ema20 and ema20 < ema50:
+            bear_score += 25
+            bear_reasons.append("مارکیٹ کا ٹرینڈ مضبوط Bearish ہے (Price < EMA20 < EMA50)۔")
+            trade_dir = "SHORT"
+        if rsi < 60 and rsi > 30:
+            bear_score += 25
+            bear_reasons.append(f"RSI ({rsi:.1f}) میں مزید گرنے کی گنجائش ہے۔")
+        if macd_hist < 0:
+            bear_score += 25
+            bear_reasons.append("MACD مومنٹم منفی (Negative) ہے۔")
+
+        if bear_score > setup_score:
+            setup_score = bear_score
+            reasons = bear_reasons
+
+        # Volume Confirmation
+        vol_ma = df['volume'].rolling(20).mean().iloc[-1]
+        if df['volume'].iloc[-1] > vol_ma:
+            setup_score += 25
+            reasons.append("حالیہ کینڈل میں والیوم (Volume) معمول سے زیادہ ہے، جو بریک آؤٹ کی تصدیق ہے۔")
+
+        # 4. Risk Management & Dynamic Targets (ATR Based)
+        if trade_dir == "LONG":
+            sl = current_price - (atr * 1.5)
+            tp1 = current_price + (atr * 2.0)
+            tp2 = current_price + (atr * 3.5)
+            entry_zone = f"${current_price * 0.999:.4f} - ${current_price * 1.001:.4f}"
+        elif trade_dir == "SHORT":
+            sl = current_price + (atr * 1.5)
+            tp1 = current_price - (atr * 2.0)
+            tp2 = current_price - (atr * 3.5)
+            entry_zone = f"${current_price * 1.001:.4f} - ${current_price * 0.999:.4f}"
         else:
-            mtf_status = "⚖️ NEUTRAL / SIDEWAYS"
-            sig = "WAIT ⏳"
-            tp1 = tp2 = sl = current_price
-            candle_pred, pred_prob = "⚖️ NEUTRAL", 50
+            sl = tp1 = tp2 = current_price
+            entry_zone = "N/A"
+
+        # Risk/Reward Calculation
+        risk = abs(current_price - sl)
+        reward = abs(tp1 - current_price)
+        rr_ratio = reward / risk if risk > 0 else 0
+
+        # Position Sizing
+        risk_amount = capital * (risk_pct / 100)
+        position_size_usd = risk_amount / (risk / current_price) if risk > 0 else 0
+        max_leverage = int((position_size_usd / capital) * 1.2) if capital > 0 else 1
+        max_leverage = max(1, min(max_leverage, 15)) # Limit leverage between 1x and 15x safely
+
+        # 5. strict REJECTION RULES (Kill Switch)
+        final_signal = trade_dir
+        warning_msg = ""
+        if setup_score < 65:
+            final_signal = "WAIT ⏳"
+            warning_msg = "سیٹ اپ کوالٹی 65 سے کم ہے۔ ٹریڈ منسوخ کر دی گئی۔"
+        elif rr_ratio < 1.3:
+            final_signal = "WAIT ⏳"
+            warning_msg = f"Risk/Reward ریونیو ({rr_ratio:.2f}) بہت کم ہے۔ ٹریڈ منسوخ!"
 
         return {
-            "success": True, "price": current_price, "rsi": current_rsi, "signal": sig,
-            "candle_pred": candle_pred, "pred_prob": pred_prob,
-            "entry_low": entry_low, "entry_high": entry_high,
-            "tp1": tp1, "tp2": tp2, "sl": sl, "bull_prob": bull_prob, "bear_prob": bear_prob,
-            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "mtf": mtf_status
+            "success": True, "price": current_price, "signal": final_signal,
+            "score": setup_score, "rr": rr_ratio, "reasons": reasons,
+            "entry_zone": entry_zone, "tp1": tp1, "tp2": tp2, "sl": sl,
+            "pos_size": position_size_usd, "leverage": max_leverage,
+            "risk_amt": risk_amount, "warning": warning_msg
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# --- Sidebar Controls ---
-st.sidebar.title("⚙️ کنٹرول پینل")
+# --- Sidebar ---
+st.sidebar.title("⚙️ Risk Engine & Settings")
 
-# 🦁 Lion Animation in Sidebar
 with st.sidebar:
     show_lion()
 
-coin_pair = st.sidebar.selectbox(
-    "🪙 کوائن منتخب کریں",
-    ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "PEPE/USDT"]
-)
-timeframe = st.sidebar.selectbox("⏱️ کینڈل ٹائم فریم", ["15m (Scalping)", "1h (Day Trading)"])
+st.sidebar.markdown("### 🏦 Portfolio Risk Management")
+capital = st.sidebar.number_input("کل سرمایہ (Total Capital $)", min_value=10, value=500, step=50)
+risk_pct = st.sidebar.slider("ایک ٹریڈ پر رسک (Risk Per Trade %)", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
+
+st.sidebar.markdown("### 📊 Market Settings")
+coin_pair = st.sidebar.selectbox("🪙 کوائن", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "DOGE/USDT"])
+timeframe = st.sidebar.selectbox("⏱️ ٹائم فریم", ["15m", "1h", "4h"])
 clean_symbol = coin_pair.replace("/", "")
-tf_param = "15m" if "15m" in timeframe else "1h"
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("📲 ٹیلی گرام الرٹ سیٹنگز")
-telegram_token = st.sidebar.text_input("Bot Token", type="password")
-telegram_chat_id = st.sidebar.text_input("Chat ID / Channel @Username")
-
-if "history" not in st.session_state: st.session_state["history"] = []
 
 # --- Main Layout ---
 col_head, col_anim = st.columns([3, 1])
-
 with col_head:
-    st.title(f"⚡ {coin_pair} Ultra Pro AI Hub")
-    fg_val, fg_cls = get_fear_and_greed()
-    st.info(f"📊 **Crypto Fear & Greed Index:** {fg_val}/100 ({fg_cls})")
-
+    st.title(f"⚡ {coin_pair} Institutional AI Advisor")
+    st.caption("Advanced Setup Scoring | Strict Risk Management | Futures Volatility Engine")
 with col_anim:
-    # 🦅 Eagle Animation on Main Page
     show_eagle()
 
-# 🤖 Manual Button is BACK!
-if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
-    with st.spinner("طوفانی سگنل تیار ہو رہا ہے..."):
-        res = get_ai_analysis(clean_symbol, tf_param)
-        if res["success"]:
-            st.session_state["analysis"] = res
+# Manual Trigger Button
+if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
+    with st.spinner("کوانٹ الگورتھم لائیو مارکیٹ اور رسک کا جائزہ لے رہا ہے..."):
+        data = get_institutional_analysis(clean_symbol, timeframe, capital, risk_pct)
+        
+        if not data["success"]:
+            st.error(data["error"])
         else:
-            st.error(res["error"])
+            st.markdown("---")
+            
+            # Top Metrics
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
+            c2.metric("حتمی فیصلہ", data["signal"] + (" 🟢" if "LONG" in data["signal"] else " 🔴" if "SHORT" in data["signal"] else ""))
+            c3.metric("سیٹ اپ کوالٹی (Score)", f"{data['score']}/100")
+            c4.metric("Risk / Reward", f"1 : {data['rr']:.2f}")
 
-# Display Results if Available
-if "analysis" in st.session_state:
-    data = st.session_state["analysis"]
-    st.markdown("---")
-    st.warning(f"🌐 **Multi-Timeframe Analysis:** {data['mtf']}")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
-    c2.metric("اگلی کینڈل کا امکان", data["candle_pred"])
-    c3.metric("سگنل کی طاقت", f"{data['pred_prob']}%")
-    st.progress(data["bull_prob"] / 100)
+            st.progress(data["score"] / 100)
 
-    # Support & Resistance Levels
-    st.markdown("---")
-    st.markdown("### 🧱 خودکار سپورٹ اور ریزسٹنس")
-    sr1, sr2, sr3, sr4 = st.columns(4)
-    sr1.error(f"🔴 Resistance 2:\n${data['r2']:,.4f}")
-    sr2.error(f"🔴 Resistance 1:\n${data['r1']:,.4f}")
-    sr3.success(f"🟢 Support 1:\n${data['s1']:,.4f}")
-    sr4.success(f"🟢 Support 2:\n${data['s2']:,.4f}")
+            # Signal Rejection or Approval
+            if data["signal"] == "WAIT ⏳":
+                st.error(f"⚠️ **ٹریڈ مسترد (TRADE REJECTED):** {data['warning']}")
+                st.info("💡 پرو ٹپ: اپنا سرمایہ بچانا بھی ایک بہترین ٹریڈ ہے۔ اچھے سیٹ اپ کا انتظار کریں۔")
+            else:
+                # Execution Panel
+                st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!** (یہ ٹریڈ رسک پیرامیٹرز پر پوری اتری ہے)")
+                
+                # Trade Setup
+                st.markdown("### 🎯 ٹریڈ کی تفصیلات (Execution Zone)")
+                st.info(f"📍 **Entry Zone:** {data['entry_zone']}")
+                
+                tc1, tc2, tc3 = st.columns(3)
+                tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
+                tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
+                tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
 
-    # FIX: Only show TP/SL if signal is not WAIT
-    st.markdown("---")
-    st.markdown("### 🎯 تجویز کردہ ٹریڈ سیٹ اپ")
-    
-    if data['signal'] == "WAIT ⏳":
-        st.error("⚠️ **مارکیٹ اس وقت واضح نہیں ہے۔ کوئی ٹریڈ نہ لیں۔ سپورٹ یا ریزسٹنس کے ٹوٹنے کا انتظار کریں!**")
-    else:
-        st.info(f"📍 **Entry Zone (یہاں انٹری لیں):** ${data['entry_low']:,.4f} -${data['entry_high']:,.4f}")
-        tc1, tc2, tc3 = st.columns(3)
-        tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
-        tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
-        tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
+                # Risk Management Engine Output
+                st.markdown("---")
+                st.markdown("### 🛡️ رسک مینجمنٹ پلان (Strict Risk Controls)")
+                r1, r2, r3 = st.columns(3)
+                r1.warning(f"**زیادہ سے زیادہ نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
+                r2.warning(f"**پوزیشن سائز (Position Size):**\n${data['pos_size']:.2f}")
+                r3.warning(f"**محفوظ لیوریج (Safe Leverage):**\n{data['leverage']}x")
 
-    # Telegram Alert Button
-    st.markdown("---")
-    st.markdown("### 📲 ٹیلی گرام پر الرٹ بھیجیں")
-    
-    alert_msg = f"""🚨 *PRO AI SIGNAL ALERT* 🚨
-Pair: *{coin_pair}* ({tf_param})
-Direction: *{data['signal']}* 
-Entry: *${data['entry_low']:,.4f} -${data['entry_high']:,.4f}*
+                # Why this trade?
+                st.markdown("---")
+                st.markdown("### 🧠 Why this trade? (یہ ٹریڈ کیوں لی جائے؟)")
+                for idx, reason in enumerate(data['reasons'], 1):
+                    st.write(f"{idx}. {reason}")
 
-🎯 TP1: `${data['tp1']:,.4f}` | 🎯 TP2: `${data['tp2']:,.4f}`
-🛑 SL: `${data['sl']:,.4f}`
 
-👇 Trade on Binance:
-https://web3.binance.com/m/referral?ref=ZNV91XU8"""
-
-    if st.button("🚀 Send Signal to Telegram Channel", type="secondary"):
-        status, msg = send_telegram_alert(telegram_token, telegram_chat_id, alert_msg)
-        if status: st.success(msg)
-        else: st.error(msg)
 
 
