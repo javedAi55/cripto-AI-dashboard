@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import requests
 import pandas as pd
 from datetime import datetime
@@ -7,21 +6,24 @@ from datetime import datetime
 # Page Configuration
 st.set_page_config(
     page_title="Ultra Pro Crypto AI Hub",
-    page_icon="⚡",
+    page_icon="🦅",
     layout="wide"
 )
 
-# 1. Animated Lottie Robot Function
-def show_animated_robot(width=200, height=200):
-    lottie_html = f"""
-    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
-        <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
-        <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_t2xnqj5b.json" 
-            background="transparent" speed="1" style="width: {width}px; height: {height}px;" loop autoplay>
-        </lottie-player>
+# 1. Animal Animations (100% Working GIFs)
+def show_eagle():
+    st.markdown("""
+    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
+        <img src="https://media.tenor.com/XqTj92-Vj2sAAAAi/eagle-flying.gif" width="180" style="border-radius: 10px; box-shadow: 0px 4px 10px rgba(0,0,0,0.5);">
     </div>
-    """
-    components.html(lottie_html, height=height + 20)
+    """, unsafe_allow_html=True)
+
+def show_lion():
+    st.markdown("""
+    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
+        <img src="https://media.tenor.com/hXyJmH0R7E8AAAAi/lion-roar.gif" width="160" style="border-radius: 10px;">
+    </div>
+    """, unsafe_allow_html=True)
 
 # 2. Fetch Fear & Greed Index
 @st.cache_data(ttl=1800)
@@ -38,19 +40,16 @@ def get_fear_and_greed():
 def send_telegram_alert(bot_token, chat_id, message_text):
     if not bot_token or not chat_id:
         return False, "براہ کرم سائیڈ بار میں Bot Token اور Chat ID درج کریں۔"
-    
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": chat_id, "text": message_text, "parse_mode": "Markdown"}
     try:
         res = requests.post(url, json=payload, timeout=5)
-        if res.status_code == 200:
-            return True, "ٹیلی گرام پر سگنل کامیابی سے بھیج دیا گیا ہے! 🚀"
-        else:
-            return False, f"ٹیلی گرام ایرر: {res.text}"
+        if res.status_code == 200: return True, "ٹیلی گرام پر سگنل چلا گیا! 🚀"
+        else: return False, f"ٹیلی گرام ایرر: {res.text}"
     except Exception as e:
         return False, f"رابطے میں ناکامی: {str(e)}"
 
-# 4. Binance AI Engine (With Entry Zone)
+# 4. Binance AI Engine
 def get_ai_analysis(symbol, interval="15m"):
     clean_sym = symbol.replace("/", "")
     urls = [
@@ -69,8 +68,7 @@ def get_ai_analysis(symbol, interval="15m"):
         except Exception:
             continue
 
-    if not data:
-        return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
+    if not data: return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
 
     try:
         df = pd.DataFrame(data, columns=[
@@ -83,7 +81,7 @@ def get_ai_analysis(symbol, interval="15m"):
         
         current_price = df['close'].iloc[-1]
         
-        # Support & Resistance (Pivot)
+        # Pivot Points
         high_p, low_p, close_p = df['high'].iloc[-2], df['low'].iloc[-2], df['close'].iloc[-2]
         pivot = (high_p + low_p + close_p) / 3
         r1, s1 = (2 * pivot) - low_p, (2 * pivot) - high_p
@@ -101,7 +99,7 @@ def get_ai_analysis(symbol, interval="15m"):
         bull_prob = 70 if (current_rsi < 40 and current_price > ema20) else 40
         bear_prob = 100 - bull_prob
 
-        # Signal Logic with ENTRY ZONE
+        # Signal Logic
         entry_low = current_price * 0.999
         entry_high = current_price * 1.001
         
@@ -134,9 +132,9 @@ def get_ai_analysis(symbol, interval="15m"):
 # --- Sidebar Controls ---
 st.sidebar.title("⚙️ کنٹرول پینل")
 
-# Animated Robot on Sidebar
+# 🦁 Lion Animation in Sidebar
 with st.sidebar:
-    show_animated_robot(150, 150)
+    show_lion()
 
 coin_pair = st.sidebar.selectbox(
     "🪙 کوائن منتخب کریں",
@@ -151,8 +149,7 @@ st.sidebar.subheader("📲 ٹیلی گرام الرٹ سیٹنگز")
 telegram_token = st.sidebar.text_input("Bot Token", type="password")
 telegram_chat_id = st.sidebar.text_input("Chat ID / Channel @Username")
 
-if "history" not in st.session_state:
-    st.session_state["history"] = []
+if "history" not in st.session_state: st.session_state["history"] = []
 
 # --- Main Layout ---
 col_head, col_anim = st.columns([3, 1])
@@ -163,14 +160,21 @@ with col_head:
     st.info(f"📊 **Crypto Fear & Greed Index:** {fg_val}/100 ({fg_cls})")
 
 with col_anim:
-    # Main Dashboard Robot
-    show_animated_robot(120, 120)
+    # 🦅 Eagle Animation on Main Page
+    show_eagle()
 
-# Auto-Fetch Data
-res = get_ai_analysis(clean_symbol, tf_param)
+# 🤖 Manual Button is BACK!
+if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
+    with st.spinner("طوفانی سگنل تیار ہو رہا ہے..."):
+        res = get_ai_analysis(clean_symbol, tf_param)
+        if res["success"]:
+            st.session_state["analysis"] = res
+        else:
+            st.error(res["error"])
 
-if res["success"]:
-    data = res
+# Display Results if Available
+if "analysis" in st.session_state:
+    data = st.session_state["analysis"]
     st.markdown("---")
     st.warning(f"🌐 **Multi-Timeframe Analysis:** {data['mtf']}")
     
@@ -189,21 +193,23 @@ if res["success"]:
     sr3.success(f"🟢 Support 1:\n${data['s1']:,.4f}")
     sr4.success(f"🟢 Support 2:\n${data['s2']:,.4f}")
 
-    # Trade Setup Targets WITH ENTRY ZONE
+    # FIX: Only show TP/SL if signal is not WAIT
     st.markdown("---")
     st.markdown("### 🎯 تجویز کردہ ٹریڈ سیٹ اپ")
     
-    # NEW ENTRY ZONE BOX
-    st.info(f"📍 **Entry Zone (یہاں انٹری لیں):** ${data['entry_low']:,.4f} -${data['entry_high']:,.4f}")
-    
-    tc1, tc2, tc3 = st.columns(3)
-    tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
-    tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
-    tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
+    if data['signal'] == "WAIT ⏳":
+        st.error("⚠️ **مارکیٹ اس وقت واضح نہیں ہے۔ کوئی ٹریڈ نہ لیں۔ سپورٹ یا ریزسٹنس کے ٹوٹنے کا انتظار کریں!**")
+    else:
+        st.info(f"📍 **Entry Zone (یہاں انٹری لیں):** ${data['entry_low']:,.4f} -${data['entry_high']:,.4f}")
+        tc1, tc2, tc3 = st.columns(3)
+        tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
+        tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
+        tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
 
     # Telegram Alert Button
     st.markdown("---")
     st.markdown("### 📲 ٹیلی گرام پر الرٹ بھیجیں")
+    
     alert_msg = f"""🚨 *PRO AI SIGNAL ALERT* 🚨
 Pair: *{coin_pair}* ({tf_param})
 Direction: *{data['signal']}* 
@@ -220,27 +226,4 @@ https://web3.binance.com/m/referral?ref=ZNV91XU8"""
         if status: st.success(msg)
         else: st.error(msg)
 
-else:
-    st.error(res["error"])
-
-# Live Chart
-st.markdown("---")
-st.markdown(f"### 📈 {coin_pair} لائیو چارٹ")
-tv_widget = f"""
-<div class="tradingview-widget-container" style="height:500px;width:100%;">
-  <div id="tradingview_chart" style="height:500px;width:100%;"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({{
-    "autosize": true,
-    "symbol": "BINANCE:{clean_symbol}",
-    "interval": "{15 if tf_param == '15m' else 60}",
-    "theme": "dark",
-    "style": "1",
-    "container_id": "tradingview_chart"
-  }});
-  </script>
-</div>
-"""
-components.html(tv_widget, height=520)
 
