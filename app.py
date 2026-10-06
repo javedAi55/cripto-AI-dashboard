@@ -6,15 +6,21 @@ from datetime import datetime
 # Page Configuration
 st.set_page_config(
     page_title="Institutional AI Futures Advisor",
-    page_icon="🦅",
+    page_icon="🤖",
     layout="wide"
 )
 
-# --- Advanced Quant Engine (Binance Vision Node - Never Blocked) ---
+# --- AI & Top Coins List ---
+ALL_COINS = [
+    # Top AI Sector Coins 🤖
+    "TAO/USDT", "NEAR/USDT", "RENDER/USDT", "FET/USDT", "WLD/USDT",
+    # Top Major Coins 🪙
+    "SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "DOGE/USDT", "XRP/USDT", "PEPE/USDT"
+]
+
+# --- Advanced Quant Engine ---
 def get_institutional_analysis(symbol, interval, capital, risk_pct):
     clean_sym = symbol.replace("/", "")
-    
-    # Binance Public Vision Data Node (High Availability)
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
     
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -24,11 +30,11 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
-    except Exception as e:
+    except:
         pass
 
     if not data:
-        return {"success": False, "error": "بینانس سرور تک رسائی میں عارضی مسئلہ ہے۔ براہ کرم دوبارہ کوشش کریں۔"}
+        return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
 
     try:
         df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
@@ -37,14 +43,14 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         
         current_price = df['close'].iloc[-1]
         
-        # 1. Volatility (ATR - Average True Range)
+        # Volatility (ATR)
         df['H-L'] = df['high'] - df['low']
         df['H-PC'] = (df['high'] - df['close'].shift(1)).abs()
         df['L-PC'] = (df['low'] - df['close'].shift(1)).abs()
         df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
         atr = df['TR'].rolling(14).mean().iloc[-1]
 
-        # 2. Indicators (RSI, MACD, EMA)
+        # Indicators
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -57,7 +63,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         signal_line = macd_line.ewm(span=9, adjust=False).mean()
         macd_hist = macd_line.iloc[-1] - signal_line.iloc[-1]
 
-        # 3. Setup Quality Scoring (0-100)
+        # Quality Scoring
         setup_score = 0
         reasons = []
         trade_dir = "NEUTRAL"
@@ -68,7 +74,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
             trade_dir = "LONG"
         if rsi > 40 and rsi < 70:
             setup_score += 25
-            reasons.append(f"RSI ({rsi:.1f}) میں اوپر جانے کی گنجائش موجود ہے۔")
+            reasons.append(f"RSI ({rsi:.1f}) میں اوپر جانے کی گنجائش ہے۔")
         if macd_hist > 0:
             setup_score += 25
             reasons.append("MACD مومنٹم مثبت (Positive) ہے۔")
@@ -81,7 +87,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
             trade_dir = "SHORT"
         if rsi < 60 and rsi > 30:
             bear_score += 25
-            bear_reasons.append(f"RSI ({rsi:.1f}) میں مزید گرنے کی گنجائش ہے۔")
+            bear_reasons.append(f"RSI ({rsi:.1f}) میں نیچے جانے کی گنجائش ہے۔")
         if macd_hist < 0:
             bear_score += 25
             bear_reasons.append("MACD مومنٹم منفی (Negative) ہے۔")
@@ -93,9 +99,9 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         vol_ma = df['volume'].rolling(20).mean().iloc[-1]
         if df['volume'].iloc[-1] > vol_ma:
             setup_score += 25
-            reasons.append("حالیہ کینڈل میں والیوم (Volume) معمول سے زیادہ ہے، جو بریک آؤٹ کی تصدیق ہے۔")
+            reasons.append("والیوم معمول سے زیادہ ہے (Breakout Confirmation)۔")
 
-        # 4. Risk Management
+        # Risk Calculation
         if trade_dir == "LONG":
             sl = current_price - (atr * 1.5)
             tp1 = current_price + (atr * 2.0)
@@ -119,7 +125,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         max_leverage = int((position_size_usd / capital) * 1.2) if capital > 0 else 1
         max_leverage = max(1, min(max_leverage, 15)) 
 
-        # 5. Rejection Rules
+        # Rejection Logic
         final_signal = trade_dir
         warning_msg = ""
         if setup_score < 65:
@@ -139,64 +145,90 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# --- Sidebar ---
+# --- Sidebar Controls ---
 st.sidebar.title("⚙️ Risk Engine & Settings")
-
-st.sidebar.markdown("### 🦁 Pro Quant Advisor")
+st.sidebar.markdown("### 🤖 AI Crypto Hub")
 st.sidebar.markdown("---")
 
-st.sidebar.markdown("### 🏦 Portfolio Risk Management")
+st.sidebar.markdown("### 🏦 Portfolio Risk Settings")
 capital = st.sidebar.number_input("کل سرمایہ (Total Capital $)", min_value=10, value=500, step=50)
 risk_pct = st.sidebar.slider("ایک ٹریڈ پر رسک (Risk Per Trade %)", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
 
 st.sidebar.markdown("### 📊 Market Settings")
-coin_pair = st.sidebar.selectbox("🪙 کوائن", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "DOGE/USDT"])
-timeframe = st.sidebar.selectbox("⏱️️ ٹائم فریم", ["15m", "1h", "4h"])
+coin_pair = st.sidebar.selectbox("🪙 کوائن چنیں (AI & Top Coins)", ALL_COINS)
+timeframe = st.sidebar.selectbox("⏱ ٹائم فریم", ["15m", "1h", "4h"])
 clean_symbol = coin_pair.replace("/", "")
 
 # --- Main Layout ---
-st.title(f"🦅 {coin_pair} Institutional AI Advisor")
-st.caption("Advanced Setup Scoring | Strict Risk Management | Futures Volatility Engine")
+st.title(f"🤖 {coin_pair} Institutional AI Advisor")
+st.caption("AI Sector Tokens Included | Setup Quality Engine | Futures Volatility & Risk Control")
 
-# Manual Trigger Button
-if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
-    with st.spinner("کوانٹ الگورتھم لائیو مارکیٹ اور رسک کا جائزہ لے رہا ہے..."):
-        data = get_institutional_analysis(clean_symbol, timeframe, capital, risk_pct)
-        
-        if not data["success"]:
-            st.error(data["error"])
-        else:
-            st.markdown("---")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
-            c2.metric("حتمی فیصلہ", data["signal"] + (" 🟢" if "LONG" in data["signal"] else " 🔴" if "SHORT" in data["signal"] else ""))
-            c3.metric("سیٹ اپ کوالٹی", f"{data['score']}/100")
-            c4.metric("Risk/Reward", f"1 : {data['rr']:.2f}")
+tab1, tab2 = st.tabs(["🎯 سنگل کوائن اینالیسس", "🔍 1-Click All AI & Top Coins Scanner"])
 
-            st.progress(data["score"] / 100)
-
-            if data["signal"] == "WAIT ⏳":
-                st.error(f"⚠️ **ٹریڈ مسترد (TRADE REJECTED):** {data['warning']}")
-                st.info("💡 پرو ٹپ: اپنا سرمایہ بچانا بھی ایک بہترین ٹریڈ ہے۔ اچھے سیٹ اپ کا انتظار کریں۔")
+# TAB 1: Single Coin Deep Analysis
+with tab1:
+    if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
+        with st.spinner("کوانٹ الگورتھم مارکیٹ کا جائزہ لے رہا ہے..."):
+            data = get_institutional_analysis(clean_symbol, timeframe, capital, risk_pct)
+            
+            if not data["success"]:
+                st.error(data["error"])
             else:
-                st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!**")
-                st.markdown("### 🎯 ٹریڈ کی تفصیلات (Execution Zone)")
-                st.info(f"📍 **Entry Zone:** {data['entry_zone']}")
-                
-                tc1, tc2, tc3 = st.columns(3)
-                tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
-                tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
-                tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
-
                 st.markdown("---")
-                st.markdown("### 🛡️️ رسک مینجمنٹ پلان (Strict Risk Controls)")
-                r1, r2, r3 = st.columns(3)
-                r1.warning(f"**نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
-                r2.warning(f"**پوزیشن سائز:**\n${data['pos_size']:.2f}")
-                r3.warning(f"**محفوظ لیوریج:**\n{data['leverage']}x")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
+                c2.metric("حتمی فیصلہ", data["signal"] + (" 🟢" if "LONG" in data["signal"] else " 🔴" if "SHORT" in data["signal"] else ""))
+                c3.metric("سیٹ اپ کوالٹی", f"{data['score']}/100")
+                c4.metric("Risk/Reward", f"1 : {data['rr']:.2f}")
 
-                st.markdown("---")
-                st.markdown("### 🧠 یہ ٹریڈ کیوں لی جائے؟")
-                for idx, reason in enumerate(data['reasons'], 1):
-                    st.write(f"{idx}. {reason}")
+                st.progress(data["score"] / 100)
 
+                if data["signal"] == "WAIT ⏳":
+                    st.error(f"⚠️ **ٹریڈ مسترد (TRADE REJECTED):** {data['warning']}")
+                    st.info("💡 پرو ٹپ: اپنا سرمایہ بچانا بھی ایک بہترین ٹریڈ ہے۔ اچھے سیٹ اپ کا انتظار کریں۔")
+                else:
+                    st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!**")
+                    st.markdown("### 🎯 ٹریڈ کی تفصیلات (Execution Zone)")
+                    st.info(f"📍 **Entry Zone:** {data['entry_zone']}")
+                    
+                    tc1, tc2, tc3 = st.columns(3)
+                    tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
+                    tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
+                    tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
+
+                    st.markdown("---")
+                    st.markdown("### 🛡 رسک مینجمنٹ پلان (Strict Risk Controls)")
+                    r1, r2, r3 = st.columns(3)
+                    r1.warning(f"**نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
+                    r2.warning(f"**پوزیشن سائز:**\n${data['pos_size']:.2f}")
+                    r3.warning(f"**محفوظ لیوریج:**\n{data['leverage']}x")
+
+                    st.markdown("---")
+                    st.markdown("### 🧠 یہ ٹریڈ کیوں لی جائے؟")
+                    for idx, reason in enumerate(data['reasons'], 1):
+                        st.write(f"{idx}. {reason}")
+
+# TAB 2: Multi-Coin Scanner
+with tab2:
+    st.subheader("🌐 تمام AI اور ٹاپ کوائنز کا ایک کلک پر اسکینر")
+    st.write("یہ فیچر تمام AI کوائنز اور ٹاپ کوائنز کو بیک وقت چیک کر کے صرف وہی کوائنز دکھائے گا جن میں بہترین ٹریڈ بن رہی ہو۔")
+    
+    if st.button("🚀 تمام AI کوائنز اسکین کریں (Scan All AI Coins)", type="secondary", use_container_width=True):
+        results = []
+        progress_bar = st.progress(0)
+        
+        for idx, coin in enumerate(ALL_COINS):
+            res = get_institutional_analysis(coin, timeframe, capital, risk_pct)
+            if res["success"]:
+                results.append({
+                    "Coin": coin,
+                    "Price": f"${res['price']:,.4f}",
+                    "Signal": res["signal"],
+                    "Quality Score": f"{res['score']}/100",
+                    "R:R Ratio": f"1:{res['rr']:.2f}"
+                })
+            progress_bar.progress((idx + 1) / len(ALL_COINS))
+        
+        st.markdown("### 📊 اسکین کا نتیجہ (Scanner Results):")
+        scan_df = pd.DataFrame(results)
+        st.dataframe(scan_df, use_container_width=True)
