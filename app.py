@@ -10,48 +10,25 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Animations (Fixed with st.image for bypass CORS) ---
-def show_eagle():
-    try:
-        st.image("https://media.tenor.com/XqTj92-Vj2sAAAAi/eagle-flying.gif", width=150)
-    except:
-        st.write("🦅") # Fallback emoji if image completely fails
-
-def show_lion():
-    try:
-        st.image("https://media.tenor.com/hXyJmH0R7E8AAAAi/lion-roar.gif", width=150)
-    except:
-        st.write("🦁")
-
-# --- Advanced Quant Engine (Dual API Fallback) ---
+# --- Advanced Quant Engine (Binance Vision Node - Never Blocked) ---
 def get_institutional_analysis(symbol, interval, capital, risk_pct):
     clean_sym = symbol.replace("/", "")
     
-    # 1. Try Futures API First
-    url_futures = f"https://fapi.binance.com/fapi/v1/klines?symbol={clean_sym}&interval={interval}&limit=100"
-    # 2. Fallback to Spot API if Futures is blocked by region
-    url_spot = f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
+    # Binance Public Vision Data Node (High Availability)
+    url = f"https://data-api.binance.vision/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
     
-    data = None
     headers = {'User-Agent': 'Mozilla/5.0'}
+    data = None
     
-    try: # فیوچرز API کی کوشش
-        res = requests.get(url_futures, headers=headers, timeout=5)
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
-    except:
+    except Exception as e:
         pass
-        
-    if not data: # اگر فیوچرز فیل ہو جائے تو سپاٹ API کی کوشش
-        try:
-            res = requests.get(url_spot, headers=headers, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-        except:
-            pass
 
     if not data:
-        return {"success": False, "error": "بینانس سرور تک رسائی میں مسئلہ ہے۔ تھوڑی دیر بعد کوشش کریں۔"}
+        return {"success": False, "error": "بینانس سرور تک رسائی میں عارضی مسئلہ ہے۔ براہ کرم دوبارہ کوشش کریں۔"}
 
     try:
         df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
@@ -60,7 +37,7 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         
         current_price = df['close'].iloc[-1]
         
-        # 1. Volatility (ATR - Average True Range without Numpy)
+        # 1. Volatility (ATR - Average True Range)
         df['H-L'] = df['high'] - df['low']
         df['H-PC'] = (df['high'] - df['close'].shift(1)).abs()
         df['L-PC'] = (df['low'] - df['close'].shift(1)).abs()
@@ -165,8 +142,8 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
 # --- Sidebar ---
 st.sidebar.title("⚙️ Risk Engine & Settings")
 
-with st.sidebar:
-    show_lion()
+st.sidebar.markdown("### 🦁 Pro Quant Advisor")
+st.sidebar.markdown("---")
 
 st.sidebar.markdown("### 🏦 Portfolio Risk Management")
 capital = st.sidebar.number_input("کل سرمایہ (Total Capital $)", min_value=10, value=500, step=50)
@@ -174,16 +151,12 @@ risk_pct = st.sidebar.slider("ایک ٹریڈ پر رسک (Risk Per Trade %)", m
 
 st.sidebar.markdown("### 📊 Market Settings")
 coin_pair = st.sidebar.selectbox("🪙 کوائن", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "DOGE/USDT"])
-timeframe = st.sidebar.selectbox("⏱️ ٹائم فریم", ["15m", "1h", "4h"])
+timeframe = st.sidebar.selectbox("⏱️️ ٹائم فریم", ["15m", "1h", "4h"])
 clean_symbol = coin_pair.replace("/", "")
 
 # --- Main Layout ---
-col_head, col_anim = st.columns([3, 1])
-with col_head:
-    st.title(f"⚡ {coin_pair} Institutional AI Advisor")
-    st.caption("Advanced Setup Scoring | Strict Risk Management | Futures Volatility Engine")
-with col_anim:
-    show_eagle()
+st.title(f"🦅 {coin_pair} Institutional AI Advisor")
+st.caption("Advanced Setup Scoring | Strict Risk Management | Futures Volatility Engine")
 
 # Manual Trigger Button
 if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
@@ -216,7 +189,7 @@ if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنر�
                 tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
 
                 st.markdown("---")
-                st.markdown("### 🛡️ رسک مینجمنٹ پلان (Strict Risk Controls)")
+                st.markdown("### 🛡️️ رسک مینجمنٹ پلان (Strict Risk Controls)")
                 r1, r2, r3 = st.columns(3)
                 r1.warning(f"**نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
                 r2.warning(f"**پوزیشن سائز:**\n${data['pos_size']:.2f}")
@@ -226,3 +199,4 @@ if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنر�
                 st.markdown("### 🧠 یہ ٹریڈ کیوں لی جائے؟")
                 for idx, reason in enumerate(data['reasons'], 1):
                     st.write(f"{idx}. {reason}")
+
