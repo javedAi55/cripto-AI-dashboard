@@ -10,33 +10,48 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Animations ---
+# --- Animations (Fixed with st.image for bypass CORS) ---
 def show_eagle():
-    st.markdown("""
-    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
-        <img src="https://media.tenor.com/XqTj92-Vj2sAAAAi/eagle-flying.gif" width="180" style="border-radius: 10px; box-shadow: 0px 4px 10px rgba(0,0,0,0.5);">
-    </div>
-    """, unsafe_allow_html=True)
+    try:
+        st.image("https://media.tenor.com/XqTj92-Vj2sAAAAi/eagle-flying.gif", width=150)
+    except:
+        st.write("🦅") # Fallback emoji if image completely fails
 
 def show_lion():
-    st.markdown("""
-    <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
-        <img src="https://media.tenor.com/hXyJmH0R7E8AAAAi/lion-roar.gif" width="160" style="border-radius: 10px;">
-    </div>
-    """, unsafe_allow_html=True)
+    try:
+        st.image("https://media.tenor.com/hXyJmH0R7E8AAAAi/lion-roar.gif", width=150)
+    except:
+        st.write("🦁")
 
-# --- Advanced Quant Engine ---
+# --- Advanced Quant Engine (Dual API Fallback) ---
 def get_institutional_analysis(symbol, interval, capital, risk_pct):
     clean_sym = symbol.replace("/", "")
-    # Using Binance Futures API (fapi)
-    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={clean_sym}&interval={interval}&limit=100"
     
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code != 200: return {"success": False, "error": "فیوچرز API سے رابطہ نہیں ہو سکا۔"}
-        data = res.json()
+    # 1. Try Futures API First
+    url_futures = f"https://fapi.binance.com/fapi/v1/klines?symbol={clean_sym}&interval={interval}&limit=100"
+    # 2. Fallback to Spot API if Futures is blocked by region
+    url_spot = f"https://api.binance.com/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
+    
+    data = None
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    try: # فیوچرز API کی کوشش
+        res = requests.get(url_futures, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
     except:
-        return {"success": False, "error": "انٹرنیٹ یا سرور کا مسئلہ۔"}
+        pass
+        
+    if not data: # اگر فیوچرز فیل ہو جائے تو سپاٹ API کی کوشش
+        try:
+            res = requests.get(url_spot, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+        except:
+            pass
+
+    if not data:
+        return {"success": False, "error": "بینانس سرور تک رسائی میں مسئلہ ہے۔ تھوڑی دیر بعد کوشش کریں۔"}
 
     try:
         df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
@@ -70,10 +85,9 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
         reasons = []
         trade_dir = "NEUTRAL"
 
-        # Bullish Scoring
         if current_price > ema20 and ema20 > ema50:
             setup_score += 25
-            reasons.append("مارکیٹ کا ٹرینڈ مضبوط Bullish ہے (Price > EMA20 > EMA50)۔")
+            reasons.append("مارکیٹ کا ٹرینڈ Bullish ہے (Price > EMA20 > EMA50)۔")
             trade_dir = "LONG"
         if rsi > 40 and rsi < 70:
             setup_score += 25
@@ -82,12 +96,11 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
             setup_score += 25
             reasons.append("MACD مومنٹم مثبت (Positive) ہے۔")
         
-        # Bearish Scoring (Override if conditions apply)
         bear_score = 0
         bear_reasons = []
         if current_price < ema20 and ema20 < ema50:
             bear_score += 25
-            bear_reasons.append("مارکیٹ کا ٹرینڈ مضبوط Bearish ہے (Price < EMA20 < EMA50)۔")
+            bear_reasons.append("مارکیٹ کا ٹرینڈ Bearish ہے (Price < EMA20 < EMA50)۔")
             trade_dir = "SHORT"
         if rsi < 60 and rsi > 30:
             bear_score += 25
@@ -100,13 +113,12 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
             setup_score = bear_score
             reasons = bear_reasons
 
-        # Volume Confirmation
         vol_ma = df['volume'].rolling(20).mean().iloc[-1]
         if df['volume'].iloc[-1] > vol_ma:
             setup_score += 25
             reasons.append("حالیہ کینڈل میں والیوم (Volume) معمول سے زیادہ ہے، جو بریک آؤٹ کی تصدیق ہے۔")
 
-        # 4. Risk Management & Dynamic Targets (ATR Based)
+        # 4. Risk Management
         if trade_dir == "LONG":
             sl = current_price - (atr * 1.5)
             tp1 = current_price + (atr * 2.0)
@@ -121,18 +133,16 @@ def get_institutional_analysis(symbol, interval, capital, risk_pct):
             sl = tp1 = tp2 = current_price
             entry_zone = "N/A"
 
-        # Risk/Reward Calculation
         risk = abs(current_price - sl)
         reward = abs(tp1 - current_price)
         rr_ratio = reward / risk if risk > 0 else 0
 
-        # Position Sizing
         risk_amount = capital * (risk_pct / 100)
         position_size_usd = risk_amount / (risk / current_price) if risk > 0 else 0
         max_leverage = int((position_size_usd / capital) * 1.2) if capital > 0 else 1
-        max_leverage = max(1, min(max_leverage, 15)) # Limit leverage between 1x and 15x safely
+        max_leverage = max(1, min(max_leverage, 15)) 
 
-        # 5. Strict REJECTION RULES (Kill Switch)
+        # 5. Rejection Rules
         final_signal = trade_dir
         warning_msg = ""
         if setup_score < 65:
@@ -184,25 +194,19 @@ if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنر�
             st.error(data["error"])
         else:
             st.markdown("---")
-            
-            # Top Metrics
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
             c2.metric("حتمی فیصلہ", data["signal"] + (" 🟢" if "LONG" in data["signal"] else " 🔴" if "SHORT" in data["signal"] else ""))
-            c3.metric("سیٹ اپ کوالٹی (Score)", f"{data['score']}/100")
-            c4.metric("Risk / Reward", f"1 : {data['rr']:.2f}")
+            c3.metric("سیٹ اپ کوالٹی", f"{data['score']}/100")
+            c4.metric("Risk/Reward", f"1 : {data['rr']:.2f}")
 
             st.progress(data["score"] / 100)
 
-            # Signal Rejection or Approval
             if data["signal"] == "WAIT ⏳":
                 st.error(f"⚠️ **ٹریڈ مسترد (TRADE REJECTED):** {data['warning']}")
                 st.info("💡 پرو ٹپ: اپنا سرمایہ بچانا بھی ایک بہترین ٹریڈ ہے۔ اچھے سیٹ اپ کا انتظار کریں۔")
             else:
-                # Execution Panel
-                st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!** (یہ ٹریڈ رسک پیرامیٹرز پر پوری اتری ہے)")
-                
-                # Trade Setup
+                st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!**")
                 st.markdown("### 🎯 ٹریڈ کی تفصیلات (Execution Zone)")
                 st.info(f"📍 **Entry Zone:** {data['entry_zone']}")
                 
@@ -211,21 +215,14 @@ if st.button("🤖 مارکیٹ کا گہرا تجزیہ اور سگنل جنر�
                 tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
                 tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
 
-                # Risk Management Engine Output
                 st.markdown("---")
                 st.markdown("### 🛡️ رسک مینجمنٹ پلان (Strict Risk Controls)")
                 r1, r2, r3 = st.columns(3)
-                r1.warning(f"**زیادہ سے زیادہ نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
-                r2.warning(f"**پوزیشن سائز (Position Size):**\n${data['pos_size']:.2f}")
-                r3.warning(f"**محفوظ لیوریج (Safe Leverage):**\n{data['leverage']}x")
+                r1.warning(f"**نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
+                r2.warning(f"**پوزیشن سائز:**\n${data['pos_size']:.2f}")
+                r3.warning(f"**محفوظ لیوریج:**\n{data['leverage']}x")
 
-                # Why this trade?
                 st.markdown("---")
-                st.markdown("### 🧠 Why this trade? (یہ ٹریڈ کیوں لی جائے؟)")
+                st.markdown("### 🧠 یہ ٹریڈ کیوں لی جائے؟")
                 for idx, reason in enumerate(data['reasons'], 1):
                     st.write(f"{idx}. {reason}")
-
-
-
-
-
