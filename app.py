@@ -1,234 +1,153 @@
-import streamlit as st
-import requests
 import pandas as pd
-from datetime import datetime
+import requests
+import streamlit as st
 
-# Page Configuration
-st.set_page_config(
-    page_title="Institutional AI Futures Advisor",
-    page_icon="🤖",
-    layout="wide"
-)
+from analysis_engine import MarketDataError, SUPPORTED_SYMBOLS, analyze_market, fetch_klines, fetch_rss_news
 
-# --- AI & Top Coins List ---
-ALL_COINS = [
-    # Top AI Sector Coins 🤖
-    "TAO/USDT", "NEAR/USDT", "RENDER/USDT", "FET/USDT", "WLD/USDT",
-    # Top Major Coins 🪙
-    "SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "DOGE/USDT", "XRP/USDT", "PEPE/USDT"
-]
+st.set_page_config(page_title="Crypto Market Analysis", page_icon="📊", layout="wide")
+st.title("📊 Crypto Market Analysis & Risk Dashboard")
+st.caption("Rule-based market analysis only — scores are not win probabilities and no trades are placed.")
 
-# --- Advanced Quant Engine ---
-def get_institutional_analysis(symbol, interval, capital, risk_pct):
-    clean_sym = symbol.replace("/", "")
-    url = f"https://data-api.binance.vision/api/v3/klines?symbol={clean_sym}&interval={interval}&limit=100"
-    
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    data = None
-    
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-    except:
-        pass
 
-    if not data:
-        return {"success": False, "error": "بینانس سرور سے رابطہ نہیں ہو سکا۔"}
+@st.cache_data(ttl=90, show_spinner=False)
+def cached_klines(symbol, interval):
+    return fetch_klines(symbol, interval)
 
-    try:
-        df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'nt', 'tbv', 'tqv', 'ignore'])
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = df[col].astype(float)
-        
-        current_price = df['close'].iloc[-1]
-        
-        # Volatility (ATR)
-        df['H-L'] = df['high'] - df['low']
-        df['H-PC'] = (df['high'] - df['close'].shift(1)).abs()
-        df['L-PC'] = (df['low'] - df['close'].shift(1)).abs()
-        df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
-        atr = df['TR'].rolling(14).mean().iloc[-1]
 
-        # Indicators
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rsi = 100 - (100 / (1 + (gain / (loss + 1e-10)))).iloc[-1]
-        
-        ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-        ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-        
-        macd_line = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
-        signal_line = macd_line.ewm(span=9, adjust=False).mean()
-        macd_hist = macd_line.iloc[-1] - signal_line.iloc[-1]
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_news():
+    return fetch_rss_news()
 
-        # Quality Scoring
-        setup_score = 0
-        reasons = []
-        trade_dir = "NEUTRAL"
 
-        if current_price > ema20 and ema20 > ema50:
-            setup_score += 25
-            reasons.append("مارکیٹ کا ٹرینڈ Bullish ہے (Price > EMA20 > EMA50)۔")
-            trade_dir = "LONG"
-        if rsi > 40 and rsi < 70:
-            setup_score += 25
-            reasons.append(f"RSI ({rsi:.1f}) میں اوپر جانے کی گنجائش ہے۔")
-        if macd_hist > 0:
-            setup_score += 25
-            reasons.append("MACD مومنٹم مثبت (Positive) ہے۔")
-        
-        bear_score = 0
-        bear_reasons = []
-        if current_price < ema20 and ema20 < ema50:
-            bear_score += 25
-            bear_reasons.append("مارکیٹ کا ٹرینڈ Bearish ہے (Price < EMA20 < EMA50)۔")
-            trade_dir = "SHORT"
-        if rsi < 60 and rsi > 30:
-            bear_score += 25
-            bear_reasons.append(f"RSI ({rsi:.1f}) میں نیچے جانے کی گنجائش ہے۔")
-        if macd_hist < 0:
-            bear_score += 25
-            bear_reasons.append("MACD مومنٹم منفی (Negative) ہے۔")
+def run_analysis(symbol, capital, risk_pct, leverage, confirm_4h):
+    intervals = ["15m", "1h"] + (["4h"] if confirm_4h else [])
+    frames = {interval: cached_klines(symbol, interval) for interval in intervals}
+    return analyze_market(symbol, frames, capital, risk_pct, leverage, confirm_4h)
 
-        if bear_score > setup_score:
-            setup_score = bear_score
-            reasons = bear_reasons
 
-        vol_ma = df['volume'].rolling(20).mean().iloc[-1]
-        if df['volume'].iloc[-1] > vol_ma:
-            setup_score += 25
-            reasons.append("والیوم معمول سے زیادہ ہے (Breakout Confirmation)۔")
+def format_price(value):
+    return "USD " + format(value, ",.6g")
 
-        # Risk Calculation
-        if trade_dir == "LONG":
-            sl = current_price - (atr * 1.5)
-            tp1 = current_price + (atr * 2.0)
-            tp2 = current_price + (atr * 3.5)
-            entry_zone = f"${current_price * 0.999:.4f} - ${current_price * 1.001:.4f}"
-        elif trade_dir == "SHORT":
-            sl = current_price + (atr * 1.5)
-            tp1 = current_price - (atr * 2.0)
-            tp2 = current_price - (atr * 3.5)
-            entry_zone = f"${current_price * 1.001:.4f} - ${current_price * 0.999:.4f}"
+
+with st.sidebar:
+    st.header("⚙️ Risk settings")
+    capital = st.number_input("Account capital (USD)", min_value=10.0, value=500.0, step=50.0)
+    risk_pct = st.slider("Maximum planned risk per trade (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+    leverage = st.slider("Leverage used for margin estimate (not a safety rating)", min_value=1, max_value=20, value=1, step=1)
+    st.caption("Leverage is only used to estimate margin. It is not safe or guaranteed.")
+    confirm_4h = st.checkbox("Require 4h trend confirmation", value=False)
+    st.divider()
+    st.caption("Market data: public Binance spot candles. Private exchange keys are never requested.")
+
+coin_pair = st.selectbox("🪙 Select a supported pair", SUPPORTED_SYMBOLS)
+tab_analysis, tab_scanner, tab_news = st.tabs(["🎯 Single-pair analysis", "🔍 Coin scanner", "📰 Crypto news"])
+
+with tab_analysis:
+    st.write("The engine checks completed 15m and 1h candles, EMA 20/50/200, RSI, MACD, ATR, volume, and recent high/low structure. 4h confirmation is optional.")
+    if st.button("Analyze selected pair", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Fetching completed candles and evaluating confirmations…"):
+                st.session_state["single_analysis"] = run_analysis(coin_pair, capital, risk_pct, leverage, confirm_4h)
+                st.session_state["single_error"] = None
+        except (MarketDataError, requests.RequestException, ValueError) as exc:
+            st.session_state["single_analysis"] = None
+            st.session_state["single_error"] = str(exc)
+    if st.session_state.get("single_error"):
+        st.error(st.session_state["single_error"])
+    result = st.session_state.get("single_analysis")
+    if result:
+        st.markdown("---")
+        m1, m2 = st.columns(2)
+        m1.metric("Latest completed 1h close", format_price(result["price"]))
+        m2.metric("Signal", result["signal"])
+        m3, m4 = st.columns(2)
+        m3.metric("Setup score", "{:.1f}/100".format(result["score"]))
+        m4.metric("Directional score gap", "{:.1f} points".format(result["directional_gap"]))
+        st.caption("A rule-based setup score is not a probability of profit. WAIT means confirmations are insufficient.")
+        st.progress(result["score"] / 100.0)
+        rows = []
+        for interval, detail in result["timeframes"].items():
+            direction = "LONG" if detail["long_score"] > detail["short_score"] else "SHORT" if detail["short_score"] > detail["long_score"] else "NEUTRAL"
+            score = max(detail["long_score"], detail["short_score"])
+            rows.append({"Timeframe": interval, "Close": format_price(detail["close"]),
+                         "RSI (14)": round(detail["rsi"], 1), "EMA trend": direction,
+                         "Directional score": "{}/100".format(score),
+                         "Volume confirmed": "Yes" if detail["volume_confirmed"] else "No",
+                         "Structure": detail["structure"]})
+        st.subheader("Timeframe confirmations")
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if result["signal"] == "WAIT / NO TRADE":
+            st.warning("No trade signal. " + " ".join(result["reasons"]))
         else:
-            sl = tp1 = tp2 = current_price
-            entry_zone = "N/A"
+            st.success("{} — confirmations passed; this is not a guarantee.".format(result["signal"]))
+            risk = result["risk"]
+            c1, c2 = st.columns(2)
+            c1.write("**Illustrative entry reference:** " + format_price(risk["entry"]))
+            c2.write("**Stop loss:** " + format_price(risk["stop"]))
+            c3, c4 = st.columns(2)
+            c3.write("**Target 1:** " + format_price(risk["target1"]) + " (R:R {:.2f})".format(risk["rr_target1"]))
+            c4.write("**Target 2:** " + format_price(risk["target2"]) + " (R:R {:.2f})".format(risk["rr_target2"]))
+            st.subheader("Hypothetical position sizing")
+            r1, r2 = st.columns(2)
+            r1.metric("Quantity", "{:.6g} units".format(risk["quantity"]))
+            r2.metric("Position notional", format_price(risk["notional"]))
+            r3, r4 = st.columns(2)
+            r3.metric("Estimated margin at {}x".format(int(risk["leverage"])), format_price(risk["margin"]))
+            r4.metric("Maximum planned loss before costs", format_price(risk["planned_loss"]))
+            if risk["margin"] > capital:
+                st.warning("Estimated margin exceeds the selected account capital at this leverage. The risk-based position size has not been capped; review the figures before any manual decision.")
+            st.caption("Position quantity uses account capital × risk % divided by stop distance. Margin is notional ÷ leverage. Fees, slippage, funding, liquidation, gaps, and exchange rules can change real outcomes; excluded from this estimate.")
+            st.write("**Confirmations:** " + "; ".join(result["reasons"]))
 
-        risk = abs(current_price - sl)
-        reward = abs(tp1 - current_price)
-        rr_ratio = reward / risk if risk > 0 else 0
+with tab_scanner:
+    st.subheader("Multi-timeframe scanner")
+    st.write("Scans supported pairs using completed 15m/1h candles (and 4h when enabled). A failed symbol is reported without stopping the scan.")
+    if st.button("Scan all supported pairs", use_container_width=True):
+        table, errors = [], []
+        progress, status = st.progress(0.0), st.empty()
+        for index, symbol in enumerate(SUPPORTED_SYMBOLS):
+            status.caption("Scanning {} ({}/{})".format(symbol, index + 1, len(SUPPORTED_SYMBOLS)))
+            try:
+                item = run_analysis(symbol, capital, risk_pct, leverage, confirm_4h)
+                table.append({"Symbol": symbol, "Signal": item["signal"],
+                              "Score": "{:.1f}/100".format(item["score"]),
+                              "Price (1h close)": format_price(item["price"]),
+                              "RSI 15m": round(item["rsi_15m"], 1), "RSI 1h": round(item["rsi_1h"], 1),
+                              "Illustrative TP1 R:R": "1:{:.2f}".format(item["rr"])})
+            except (MarketDataError, requests.RequestException, ValueError) as exc:
+                errors.append({"Symbol": symbol, "Error": str(exc)})
+            progress.progress((index + 1) / len(SUPPORTED_SYMBOLS))
+        status.empty()
+        st.session_state["scan_table"], st.session_state["scan_errors"] = table, errors
+    if "scan_table" in st.session_state:
+        if st.session_state["scan_table"]:
+            st.dataframe(pd.DataFrame(st.session_state["scan_table"]), use_container_width=True, hide_index=True)
+            st.caption("Illustrative target-1 R:R uses fixed ATR multiples, not historical performance. Scores are not win probabilities.")
+        else:
+            st.info("No symbols returned analyzable data.")
+        if st.session_state["scan_errors"]:
+            st.warning("Some pairs could not be scanned; successful results are still shown.")
+            st.dataframe(pd.DataFrame(st.session_state["scan_errors"]), use_container_width=True, hide_index=True)
 
-        risk_amount = capital * (risk_pct / 100)
-        position_size_usd = risk_amount / (risk / current_price) if risk > 0 else 0
-        max_leverage = int((position_size_usd / capital) * 1.2) if capital > 0 else 1
-        max_leverage = max(1, min(max_leverage, 15)) 
+with tab_news:
+    st.subheader("Public crypto news")
+    st.caption("Headlines link to original publishers. No sentiment or AI classification is applied.")
+    if st.button("Load / refresh news", use_container_width=True):
+        cached_news.clear()
+        st.session_state["news_data"] = cached_news()
+    news = st.session_state.get("news_data")
+    if news is None:
+        st.info("Select Load / refresh news to retrieve current headlines.")
+    elif news["articles"]:
+        for article in news["articles"]:
+            st.link_button(article["title"], article["url"], use_container_width=True)
+            st.caption("{} · {}".format(article["source"], article["published"]))
+    else:
+        st.info("No headlines are currently available from the configured feeds.")
+    if news and news["errors"]:
+        with st.expander("Feed availability details"):
+            for error in news["errors"]:
+                st.warning(error)
 
-        # Rejection Logic
-        final_signal = trade_dir
-        warning_msg = ""
-        if setup_score < 65:
-            final_signal = "WAIT ⏳"
-            warning_msg = "سیٹ اپ کوالٹی 65 سے کم ہے۔ ٹریڈ منسوخ کر دی گئی۔"
-        elif rr_ratio < 1.3:
-            final_signal = "WAIT ⏳"
-            warning_msg = f"Risk/Reward ریونیو ({rr_ratio:.2f}) بہت کم ہے۔ ٹریڈ منسوخ!"
-
-        return {
-            "success": True, "price": current_price, "signal": final_signal,
-            "score": setup_score, "rr": rr_ratio, "reasons": reasons,
-            "entry_zone": entry_zone, "tp1": tp1, "tp2": tp2, "sl": sl,
-            "pos_size": position_size_usd, "leverage": max_leverage,
-            "risk_amt": risk_amount, "warning": warning_msg
-        }
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-# --- Sidebar Controls ---
-st.sidebar.title("⚙️ Risk Engine & Settings")
-st.sidebar.markdown("### 🤖 AI Crypto Hub")
-st.sidebar.markdown("---")
-
-st.sidebar.markdown("### 🏦 Portfolio Risk Settings")
-capital = st.sidebar.number_input("کل سرمایہ (Total Capital $)", min_value=10, value=500, step=50)
-risk_pct = st.sidebar.slider("ایک ٹریڈ پر رسک (Risk Per Trade %)", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
-
-st.sidebar.markdown("### 📊 Market Settings")
-coin_pair = st.sidebar.selectbox("🪙 کوائن چنیں (AI & Top Coins)", ALL_COINS)
-timeframe = st.sidebar.selectbox("⏱ ٹائم فریم", ["15m", "1h", "4h"])
-clean_symbol = coin_pair.replace("/", "")
-
-# --- Main Layout ---
-st.title(f"🤖 {coin_pair} Institutional AI Advisor")
-st.caption("AI Sector Tokens Included | Setup Quality Engine | Futures Volatility & Risk Control")
-
-tab1, tab2 = st.tabs(["🎯 سنگل کوائن اینالیسس", "🔍 1-Click All AI & Top Coins Scanner"])
-
-# TAB 1: Single Coin Deep Analysis
-with tab1:
-    if st.button("🤖 لائیو اینالیسس اور سگنل جنریٹ کریں", type="primary", use_container_width=True):
-        with st.spinner("کوانٹ الگورتھم مارکیٹ کا جائزہ لے رہا ہے..."):
-            data = get_institutional_analysis(clean_symbol, timeframe, capital, risk_pct)
-            
-            if not data["success"]:
-                st.error(data["error"])
-            else:
-                st.markdown("---")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("موجودہ قیمت", f"${data['price']:,.4f}")
-                c2.metric("حتمی فیصلہ", data["signal"] + (" 🟢" if "LONG" in data["signal"] else " 🔴" if "SHORT" in data["signal"] else ""))
-                c3.metric("سیٹ اپ کوالٹی", f"{data['score']}/100")
-                c4.metric("Risk/Reward", f"1 : {data['rr']:.2f}")
-
-                st.progress(data["score"] / 100)
-
-                if data["signal"] == "WAIT ⏳":
-                    st.error(f"⚠️ **ٹریڈ مسترد (TRADE REJECTED):** {data['warning']}")
-                    st.info("💡 پرو ٹپ: اپنا سرمایہ بچانا بھی ایک بہترین ٹریڈ ہے۔ اچھے سیٹ اپ کا انتظار کریں۔")
-                else:
-                    st.success(f"✅ **پرفیکٹ سیٹ اپ مل گیا!**")
-                    st.markdown("### 🎯 ٹریڈ کی تفصیلات (Execution Zone)")
-                    st.info(f"📍 **Entry Zone:** {data['entry_zone']}")
-                    
-                    tc1, tc2, tc3 = st.columns(3)
-                    tc1.success(f"**Target 1 (TP1):**\n${data['tp1']:,.4f}")
-                    tc2.success(f"**Target 2 (TP2):**\n${data['tp2']:,.4f}")
-                    tc3.error(f"**Stop Loss (SL):**\n${data['sl']:,.4f}")
-
-                    st.markdown("---")
-                    st.markdown("### 🛡 رسک مینجمنٹ پلان (Strict Risk Controls)")
-                    r1, r2, r3 = st.columns(3)
-                    r1.warning(f"**نقصان (Max Risk):**\n${data['risk_amt']:.2f}")
-                    r2.warning(f"**پوزیشن سائز:**\n${data['pos_size']:.2f}")
-                    r3.warning(f"**محفوظ لیوریج:**\n{data['leverage']}x")
-
-                    st.markdown("---")
-                    st.markdown("### 🧠 یہ ٹریڈ کیوں لی جائے؟")
-                    for idx, reason in enumerate(data['reasons'], 1):
-                        st.write(f"{idx}. {reason}")
-
-# TAB 2: Multi-Coin Scanner
-with tab2:
-    st.subheader("🌐 تمام AI اور ٹاپ کوائنز کا ایک کلک پر اسکینر")
-    st.write("یہ فیچر تمام AI کوائنز اور ٹاپ کوائنز کو بیک وقت چیک کر کے صرف وہی کوائنز دکھائے گا جن میں بہترین ٹریڈ بن رہی ہو۔")
-    
-    if st.button("🚀 تمام AI کوائنز اسکین کریں (Scan All AI Coins)", type="secondary", use_container_width=True):
-        results = []
-        progress_bar = st.progress(0)
-        
-        for idx, coin in enumerate(ALL_COINS):
-            res = get_institutional_analysis(coin, timeframe, capital, risk_pct)
-            if res["success"]:
-                results.append({
-                    "Coin": coin,
-                    "Price": f"${res['price']:,.4f}",
-                    "Signal": res["signal"],
-                    "Quality Score": f"{res['score']}/100",
-                    "R:R Ratio": f"1:{res['rr']:.2f}"
-                })
-            progress_bar.progress((idx + 1) / len(ALL_COINS))
-        
-        st.markdown("### 📊 اسکین کا نتیجہ (Scanner Results):")
-        scan_df = pd.DataFrame(results)
-        st.dataframe(scan_df, use_container_width=True)
+st.markdown("---")
+st.caption("Educational market-data tool only; not investment advice. It never places orders. Use at your own risk.")
