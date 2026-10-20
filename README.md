@@ -1,45 +1,123 @@
-# Crypto Market Analysis & Risk Dashboard
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objects as go
+import requests
 
-A Streamlit dashboard for conservative, rule-based cryptocurrency analysis using public Binance spot klines. It does not place trades, request private exchange keys, promise outcomes, or provide investment advice.
+st.set_page_config(page_title="Crypto AI Futures Dashboard", layout="wide")
 
-## Features
+st.title("🤖 SOL/USDT AI Futures Trading Dashboard")
+st.caption("سولانا (SOL) فیوچرز ٹریڈنگ کا خودکار AI تجزیہ اور رسک مینجمنٹ ڈیش بورڈ")
 
-- Completed 15m and 1h candle analysis; optional 4h trend confirmation.
-- EMA 20/50/200, Wilder RSI(14), MACD, ATR(14), volume confirmation, and recent high/low structure.
-- BUY / LONG, SELL / SHORT, or WAIT / NO TRADE based on multi-timeframe agreement, score separation, and multiple confirmations. Extreme RSI and weak/sideways setups are rejected.
-- Scores from 0 to 100 are rule-based setup-quality scores, not probabilities of winning or profit. No profitability claim is made; historical backtesting has not been performed.
-- Hypothetical ATR-based stops/targets, quantity, position notional, estimated margin, leverage, and maximum planned loss.
-- Coin scanner continues when a symbol fails and reports per-symbol errors.
-- Deduplicated CoinDesk, Cointelegraph, and Decrypt RSS/Atom headlines with publication time and original article link. No sentiment classifier is used.
+# Sidebar for settings
+st.sidebar.header("⚙️ ٹریڈنگ سیٹنگز (Settings)")
+capital = st.sidebar.number_input("آپ کا ٹوٹل کیپیٹل ($)", value=100.0, step=10.0)
+risk_pct = st.sidebar.slider("رسک فی ٹریڈ (%)", 1.0, 5.0, 2.0)
+leverage = st.sidebar.slider("لیوریج (Leverage)", 1, 5, 3)
 
-## Risk and data limitations
+# Data Fetching
+@st.cache_data(ttl=60)
+def load_data():
+    df = yf.download(tickers="SOL-USD", period="7d", interval="1h", progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.reset_index()
+    df['close'] = df['Close'].astype(float)
+    
+    # RSI Calculation
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
 
-Position quantity is capital multiplied by risk percent divided by stop distance. Estimated margin is position notional divided by user-entered leverage; leverage is not characterized as safe. Planned loss excludes fees, slippage, funding, liquidation, gaps, and exchange-specific rules. Actual outcomes may differ. Binance spot availability changes, and public endpoints may rate-limit or be unavailable; errors appear in the app.
+    # EMA Calculation
+    df['EMA_20'] = df['close'].ewm(span=20, adjust=False).mean()
+    df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
+    df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
+    
+    return df
 
-## Run locally
+try:
+    df = load_data()
+    curr_price = df['close'].iloc[-1]
+    curr_rsi = df['RSI'].iloc[-1]
+    ema20 = df['EMA_20'].iloc[-1]
+    ema50 = df['EMA_50'].iloc[-1]
+    ema200 = df['EMA_200'].iloc[-1]
 
-Python 3.11 is the checked-in devcontainer baseline; the source avoids syntax newer than Python 3.9.
+    # Top Metrics Cards
+    col1, col2, col3 = st.columns(3)
+    col1.metric("موجودہ قیمت (Price)", f"${curr_price:.2f}")
+    col2.metric("RSI (14)", f"{curr_rsi:.1f}")
+    
+    try:
+        fg_res = requests.get("https://api.alternative.me/fng/", timeout=3).json()
+        fg_val = fg_res['data'][0]['value']
+        fg_status = fg_res['data'][0]['value_classification']
+        col3.metric("Fear & Greed Index", f"{fg_val} ({fg_status})")
+    except:
+        col3.metric("Fear & Greed Index", "50 (Neutral)")
 
-~~~~bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-python -m pip install -r requirements.txt
-streamlit run app.py
-~~~~
+    st.markdown("---")
 
-## Tests
+    # AI Futures Signal Analysis
+    st.subheader("🎯 AI Futures Trade Signal & Levels")
+    
+    if curr_rsi > 70:
+        signal = "SHORT"
+        entry_zone = f"${curr_price:.2f} -${curr_price * 1.01:.2f}"
+        sl = curr_price * 1.02
+        tp1 = curr_price * 0.97
+        tp2 = curr_price * 0.95
+        st.error(f"🔴 سگنل: **{signal}** (Overbought زون — ریجیکشن کی تصدیق کریں)")
+    elif curr_rsi < 30:
+        signal = "LONG"
+        entry_zone = f"${curr_price * 0.99:.2f} -${curr_price:.2f}"
+        sl = curr_price * 0.98
+        tp1 = curr_price * 1.03
+        tp2 = curr_price * 1.05
+        st.success(f"🟢 سگنل: **{signal}** (Oversold زون — سپورٹ کی تصدیق کریں)")
+    else:
+        signal = "NEUTRAL"
+        entry_zone = "انتظار کریں (No Entry)"
+        sl, tp1, tp2 = 0.0, 0.0, 0.0
+        st.warning("🟡 سگنل: **NEUTRAL** (مارکیٹ رینج میں ہے، فی الحال ٹریڈ نہ کریں)")
 
-~~~~bash
-python -m unittest discover -s tests -v
-python -m py_compile app.py analysis_engine.py tests/test_analysis_engine.py
-~~~~
+    # Levels Table
+    if signal != "NEUTRAL":
+        col_a, col_b, col_c, col_d = st.columns(4)
+        col_a.info(f"📍 **Entry Zone:**\n{entry_zone}")
+        col_b.error(f"🛑 **Stop Loss (SL):**\n${sl:.2f}")
+        col_c.success(f"🎯 **Target 1 (TP1):**\n${tp1:.2f}")
+        col_d.success(f"🎯 **Target 2 (TP2):**\n${tp2:.2f}")
 
-Tests use deterministic local candle data and do not call Binance or RSS. They do not verify live endpoint or Streamlit Community Cloud availability.
+    st.markdown("---")
 
-## Streamlit Community Cloud
+    # Interactive Chart
+    st.subheader("📈 لائیو کینڈل اسٹک اور EMA چارٹ")
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=df['Datetime'] if 'Datetime' in df else df.index,
+                    open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='SOL'))
+    fig.add_trace(go.Scatter(x=df['Datetime'] if 'Datetime' in df else df.index, y=df['EMA_20'], line=dict(color='orange', width=1), name='EMA 20'))
+    fig.add_trace(go.Scatter(x=df['Datetime'] if 'Datetime' in df else df.index, y=df['EMA_50'], line=dict(color='purple', width=1), name='EMA 50'))
+    fig.add_trace(go.Scatter(x=df['Datetime'] if 'Datetime' in df else df.index, y=df['EMA_200'], line=dict(color='blue', width=1), name='EMA 200'))
+    fig.update_layout(xaxis_rangeslider_visible=False, height=450, margin=dict(l=10, r=10, t=10, b=10))
+    st.plotly_chart(fig, use_container_width=True)
 
-Deploy app.py from the repository root with requirements.txt. The app uses Python standard-library RSS parsing and public HTTP endpoints, with no secret configuration or trading credentials. The devcontainer baseline is Python 3.11; Community Cloud defaults to Python 3.12. Dependency ranges allow compatible Streamlit, pandas, and requests releases.
+    # Risk Management Calculator
+    st.markdown("---")
+    st.subheader("🧮 فیوچرز پوزیشن سائز کیلکولیٹر (Futures Risk Calculator)")
+    max_risk_usd = (capital * risk_pct) / 100
+    st.write(f"💡 **آپ کی پالیسی:** اس ٹریڈ میں آپ کا زیادہ سے زیادہ نقصان **${max_risk_usd:.2f}** سے زیادہ نہیں ہونا چاہیے۔")
+    
+    if signal != "NEUTRAL" and sl > 0:
+        price_diff = abs(curr_price - sl)
+        pos_size_sol = max_risk_usd / price_diff
+        margin_required = (pos_size_sol * curr_price) / leverage
+        
+        st.write(f"👉 **تجویز کردہ ٹریڈ سائز:** `{pos_size_sol:.2f} SOL` (${pos_size_sol * curr_price:.2f})")
+        st.write(f"👉 **ضروری مارجن ({leverage}x Leverage):** `${margin_required:.2f}`")
 
-## Supported symbols
-
-TAO, NEAR, RENDER, FET, WLD, SOL, BTC, ETH, BNB, DOGE, XRP, and PEPE quoted in USDT. Unavailable spot pairs appear as scan errors instead of stopping the scan.
+except Exception as e:
+        st.error(f"ڈاٹا لوڈ کرنے میں مسئلہ آیا: {e}")
