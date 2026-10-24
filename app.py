@@ -2,7 +2,14 @@ import pandas as pd
 import requests
 import streamlit as st
 import plotly.graph_objects as go
-from analysis_engine import MarketDataError, SUPPORTED_SYMBOLS, analyze_market, fetch_klines, fetch_rss_news
+from analysis_engine import (
+    MarketDataError,
+    SUPPORTED_SYMBOLS,
+    analyze_market,
+    calculate_indicators,
+    fetch_klines,
+    fetch_rss_news,
+)
 
 st.set_page_config(page_title="Crypto Market Analysis", page_icon="📊", layout="wide")
 st.title("📊 Crypto Market Analysis & Risk Dashboard / کرپٹو مارکیٹ تجزیہ اور رسک ڈیش بورڈ")
