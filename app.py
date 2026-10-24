@@ -35,6 +35,96 @@ def run_analysis(symbol, capital, risk_pct, leverage, confirm_4h):
 def format_price(value):
     return "USD " + format(value, ",.6g")
 
+def build_market_chart(frame, symbol):
+    """Build a candlestick chart with EMA and simple support/resistance levels."""
+    data = calculate_indicators(frame).copy()
+
+    if "open" not in data.columns:
+        raise MarketDataError("Candle data is missing the open price.")
+
+    if "open_time" not in data.columns:
+        raise MarketDataError("Candle data is missing candle timestamps.")
+
+    data = data.tail(180).reset_index(drop=True)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=data["open_time"],
+        open=data["open"],
+        high=data["high"],
+        low=data["low"],
+        close=data["close"],
+        name="Candlesticks",
+    ))
+
+    for column, label in [
+        ("ema20", "EMA 20"),
+        ("ema50", "EMA 50"),
+        ("ema200", "EMA 200"),
+    ]:
+        fig.add_trace(go.Scatter(
+            x=data["open_time"],
+            y=data[column],
+            mode="lines",
+            name=label,
+        ))
+
+    # Find recent local highs and lows to estimate horizontal levels.
+    recent = data.tail(120).reset_index(drop=True)
+    support_candidates = []
+    resistance_candidates = []
+
+    for i in range(2, len(recent) - 2):
+        low = float(recent.loc[i, "low"])
+        high = float(recent.loc[i, "high"])
+
+        nearby_lows = recent.loc[i - 2:i + 2, "low"].drop(index=i)
+        nearby_highs = recent.loc[i - 2:i + 2, "high"].drop(index=i)
+
+        if low <= float(nearby_lows.min()):
+            support_candidates.append(low)
+
+        if high >= float(nearby_highs.max()):
+            resistance_candidates.append(high)
+
+    current_price = float(data["close"].iloc[-1])
+
+    supports = sorted(
+        [level for level in support_candidates if level < current_price],
+        reverse=True,
+    )
+    resistances = sorted(
+        [level for level in resistance_candidates if level > current_price]
+    )
+
+    # Draw up to two nearby levels on each side of the current price.
+    for level in supports[:2]:
+        fig.add_hline(
+            y=level,
+            line_dash="dash",
+            annotation_text="Support",
+        )
+
+    for level in resistances[:2]:
+        fig.add_hline(
+            y=level,
+            line_dash="dash",
+            annotation_text="Resistance",
+        )
+
+    fig.update_layout(
+        title="{} — 1h Market Chart".format(symbol),
+        xaxis_title="Time (UTC)",
+        yaxis_title="Price (USDT)",
+        xaxis_rangeslider_visible=False,
+        height=650,
+        legend_title="Indicators",
+        margin=dict(l=10, r=10, t=55, b=10),
+    )
+
+    return fig
+
 
 def display_signal(value):
     return {"BUY / LONG": "BUY / LONG — خرید / لانگ", "SELL / SHORT": "SELL / SHORT — فروخت / شارٹ", "WAIT / NO TRADE": "WAIT / NO TRADE — انتظار / ٹریڈ نہیں"}.get(value, value)
