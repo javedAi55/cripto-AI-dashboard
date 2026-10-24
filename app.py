@@ -144,7 +144,40 @@ coin_pair = st.selectbox("🪙 Select a supported pair / دستیاب کوائن
 tab_analysis, tab_scanner, tab_news = st.tabs(["🎯 Single-pair analysis / انفرادی تجزیہ", "🔍 Coin scanner / کوائن اسکینر", "📰 Crypto news / کرپٹو خبریں"])
 
 with tab_analysis:
-    st.write("The engine checks completed 15m and 1h candles, EMA 20/50/200, RSI, MACD, ATR, volume, and recent high/low structure. 4h confirmation is optional. / مکمل 15m اور 1h کینڈلز، EMA 20/50/200، RSI، MACD، ATR، والیوم اور قیمت کا ڈھانچہ دیکھا جاتا ہے؛ 4h تصدیق اختیاری ہے۔")
+   
+    st.subheader("📈 Interactive Market Chart / انٹرایکٹو مارکیٹ چارٹ")
+
+    if st.button(
+        "Load 1h chart / ایک گھنٹے کا چارٹ دکھائیں",
+        use_container_width=True,
+    ):
+        try:
+            with st.spinner("Loading completed candles... / مکمل کینڈلز لوڈ ہو رہی ہیں..."):
+                st.session_state["chart_frame"] = cached_klines(
+                    coin_pair, "1h"
+                )
+                st.session_state["chart_error"] = None
+        except (MarketDataError, requests.RequestException, ValueError) as exc:
+            st.session_state["chart_frame"] = None
+            st.session_state["chart_error"] = str(exc)
+
+    if st.session_state.get("chart_error"):
+        st.error(st.session_state["chart_error"])
+
+    chart_frame = st.session_state.get("chart_frame")
+
+    if chart_frame is not None:
+        try:
+            fig = build_market_chart(chart_frame, coin_pair)
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "EMA lines and nearby support/resistance are technical "
+                "references, not guaranteed predictions. / "
+                "یہ تکنیکی اشارے ہیں، مستقبل کی ضمانت نہیں۔"
+            )
+        except (MarketDataError, ValueError, KeyError) as exc:
+            st.error("Could not build chart: {}".format(exc))
+ st.write("The engine checks completed 15m and 1h candles, EMA 20/50/200, RSI, MACD, ATR, volume, and recent high/low structure. 4h confirmation is optional. / مکمل 15m اور 1h کینڈلز، EMA 20/50/200، RSI، MACD، ATR، والیوم اور قیمت کا ڈھانچہ دیکھا جاتا ہے؛ 4h تصدیق اختیاری ہے۔")
     if st.button("Analyze selected pair / منتخب کوائن کا تجزیہ کریں", type="primary", use_container_width=True):
         try:
             with st.spinner("Fetching completed candles and evaluating confirmations… / مکمل کینڈلز اور تصدیقات دیکھی جا رہی ہیں…"):
