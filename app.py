@@ -1,7 +1,7 @@
 import pandas as pd
 import requests
 import streamlit as st
-
+import plotly.graph_objects as go
 from analysis_engine import MarketDataError, SUPPORTED_SYMBOLS, analyze_market, fetch_klines, fetch_rss_news
 
 st.set_page_config(page_title="Crypto Market Analysis", page_icon="📊", layout="wide")
