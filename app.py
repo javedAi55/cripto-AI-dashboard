@@ -1,7 +1,11 @@
 
+import json
+import html
+
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
 from analysis_engine import (
@@ -13,24 +17,137 @@ from analysis_engine import (
     fetch_rss_news,
 )
 
+# --------------------------------------------------
+# PAGE CONFIGURATION
+# --------------------------------------------------
 st.set_page_config(
-    page_title="Crypto Market Analysis",
-    page_icon="📊",
+    page_title="CryptoAI Pro",
+    page_icon="🐂",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.title(
-    "📊 Crypto Market Analysis & Risk Dashboard / "
-    "کرپٹو مارکیٹ تجزیہ اور رسک ڈیش بورڈ"
-)
-st.caption(
-    "Rule-based market analysis only — scores are not win probabilities "
-    "and no trades are placed. / یہ اصولوں پر مبنی تجزیہ ہے؛ "
-    "اسکور جیتنے کا امکان نہیں اور کوئی ٹریڈ نہیں لگائی جاتی۔"
+# --------------------------------------------------
+# PREMIUM DARK UI
+# --------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background:
+            radial-gradient(ellipse at top left,
+                rgba(15, 65, 100, .25), transparent 45%),
+            #080d18;
+        color: #edf3ff;
+    }
+    [data-testid="stSidebar"] {
+        background: #0d1524;
+        border-right: 1px solid #22314a;
+    }
+    h1, h2, h3 {
+        color: #f1f6ff !important;
+        letter-spacing: -.4px;
+    }
+    .hero {
+        background: linear-gradient(120deg, #101f35, #11162b 65%, #18243a);
+        border: 1px solid #2a3b56;
+        border-radius: 22px;
+        padding: 25px;
+        margin: 8px 0 22px 0;
+    }
+    .hero-title {
+        font-size: 30px;
+        font-weight: 800;
+        color: #ffffff;
+    }
+    .hero-sub {
+        color: #a8bad4;
+        margin-top: 8px;
+        font-size: 14px;
+    }
+    .tag {
+        display: inline-block;
+        background: #182b40;
+        border: 1px solid #304c68;
+        color: #8edcff;
+        padding: 5px 10px;
+        border-radius: 30px;
+        font-size: 12px;
+        margin: 3px;
+    }
+    .panel {
+        background: #101a2a;
+        border: 1px solid #263750;
+        border-radius: 17px;
+        padding: 18px;
+        min-height: 130px;
+    }
+    .panel-label {
+        color: #94a8c5;
+        font-size: 13px;
+    }
+    .panel-value {
+        color: #f4f7ff;
+        font-size: 23px;
+        font-weight: 750;
+        margin-top: 10px;
+        overflow-wrap: anywhere;
+    }
+    .panel-note {
+        color: #92a5c1;
+        font-size: 12px;
+        margin-top: 7px;
+    }
+    .bull {
+        color: #35e7a1;
+        text-shadow: 0 0 20px rgba(53,231,161,.3);
+    }
+    .bear {
+        color: #ff6578;
+        text-shadow: 0 0 20px rgba(255,101,120,.3);
+    }
+    .neutral {
+        color: #f2c96d;
+    }
+    .creature {
+        font-size: 68px;
+        display: inline-block;
+        animation: breathe 2.4s ease-in-out infinite;
+    }
+    @keyframes breathe {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-7px) scale(1.035); }
+    }
+    div.stButton > button {
+        border-radius: 11px;
+        min-height: 43px;
+        font-weight: 650;
+        border: 1px solid #344b69;
+    }
+    div.stButton > button[kind="primary"] {
+        background: linear-gradient(90deg, #087e68, #159b87);
+        border: none;
+        color: white;
+    }
+    [data-testid="stMetric"] {
+        background: #101a2a;
+        border: 1px solid #263750;
+        padding: 14px;
+        border-radius: 13px;
+    }
+    .small-note {
+        color: #91a3bc;
+        font-size: 12px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-
-@st.cache_data(ttl=90, show_spinner=False)
+# --------------------------------------------------
+# DATA HELPERS
+# --------------------------------------------------
+@st.cache_data(ttl=60, show_spinner=False)
 def cached_klines(symbol, interval):
     return fetch_klines(symbol, interval)
 
@@ -52,21 +169,43 @@ def run_analysis(symbol, capital, risk_pct, leverage, confirm_4h):
 
 
 def format_price(value):
-    return "USD " + format(value, ",.6g")
+    return "USDT " + format(float(value), ",.6g")
 
 
 def display_signal(value):
     labels = {
-        "BUY / LONG": "BUY / LONG — خرید / لانگ",
-        "SELL / SHORT": "SELL / SHORT — فروخت / شارٹ",
-        "WAIT / NO TRADE": "WAIT / NO TRADE — انتظار / ٹریڈ نہیں",
+        "BUY / LONG": "BUY / LONG — خرید",
+        "SELL / SHORT": "SELL / SHORT — فروخت",
+        "WAIT / NO TRADE": "WAIT — انتظار",
     }
     return labels.get(value, value)
 
 
-def build_market_chart(frame, symbol):
-    """Build a candlestick chart with EMA and estimated support/resistance."""
-    data = calculate_indicators(frame).copy()
+def direction_info(signal):
+    if signal == "BUY / LONG":
+        return {
+            "emoji": "🐂",
+            "class": "bull",
+            "title": "BULLISH BIAS",
+            "message": "تجزیے میں تیزی کے شواہد سامنے آئے ہیں۔",
+        }
+    if signal == "SELL / SHORT":
+        return {
+            "emoji": "🐻",
+            "class": "bear",
+            "title": "BEARISH BIAS",
+            "message": "تجزیے میں مندی کے شواہد سامنے آئے ہیں۔",
+        }
+    return {
+        "emoji": "🐂 🐻",
+        "class": "neutral",
+        "title": "WAIT / NEUTRAL",
+        "message": "واضح سمت کی تصدیق نہیں ہوئی؛ احتیاط بہتر ہے۔",
+    }
+
+
+def build_market_chart(frame, symbol, interval):
+    data = calculate_indicators(frame).tail(180).reset_index(drop=True)
 
     required = {
         "open", "high", "low", "close", "open_time",
@@ -75,427 +214,520 @@ def build_market_chart(frame, symbol):
     missing = required.difference(data.columns)
     if missing:
         raise MarketDataError(
-            "Candle data is missing columns: "
-            + ", ".join(sorted(missing))
+            "Missing chart columns: " + ", ".join(sorted(missing))
         )
-
-    data = data.tail(180).reset_index(drop=True)
 
     fig = go.Figure()
 
-    fig.add_trace(
-        go.Candlestick(
-            x=data["open_time"],
-            open=data["open"],
-            high=data["high"],
-            low=data["low"],
-            close=data["close"],
-            name="Candlesticks",
-        )
-    )
+    fig.add_trace(go.Candlestick(
+        x=data["open_time"],
+        open=data["open"],
+        high=data["high"],
+        low=data["low"],
+        close=data["close"],
+        name="Candles",
+        increasing_line_color="#25d9a0",
+        decreasing_line_color="#ff6177",
+    ))
+
+    line_colors = {
+        "ema20": "#4cc9f0",
+        "ema50": "#b28dff",
+        "ema200": "#f5c45e",
+    }
 
     for column, label in [
         ("ema20", "EMA 20"),
         ("ema50", "EMA 50"),
         ("ema200", "EMA 200"),
     ]:
-        fig.add_trace(
-            go.Scatter(
-                x=data["open_time"],
-                y=data[column],
-                mode="lines",
-                name=label,
-            )
-        )
+        fig.add_trace(go.Scatter(
+            x=data["open_time"],
+            y=data[column],
+            mode="lines",
+            name=label,
+            line=dict(color=line_colors[column], width=1.5),
+        ))
 
-    # Estimate nearby support/resistance from local highs and lows.
     recent = data.tail(120).reset_index(drop=True)
-    support_candidates = []
-    resistance_candidates = []
+    support_candidates, resistance_candidates = [], []
 
     for i in range(2, len(recent) - 2):
         low = float(recent.loc[i, "low"])
         high = float(recent.loc[i, "high"])
+        lows = recent.loc[i - 2:i + 2, "low"].drop(index=i)
+        highs = recent.loc[i - 2:i + 2, "high"].drop(index=i)
 
-        nearby_lows = recent.loc[i - 2:i + 2, "low"].drop(index=i)
-        nearby_highs = recent.loc[i - 2:i + 2, "high"].drop(index=i)
-
-        if low <= float(nearby_lows.min()):
+        if low <= float(lows.min()):
             support_candidates.append(low)
-
-        if high >= float(nearby_highs.max()):
+        if high >= float(highs.max()):
             resistance_candidates.append(high)
 
-    current_price = float(data["close"].iloc[-1])
-
+    current = float(data["close"].iloc[-1])
     supports = sorted(
-        {
-            level
-            for level in support_candidates
-            if level < current_price
-        },
+        {x for x in support_candidates if x < current},
         reverse=True,
     )
     resistances = sorted(
-        {
-            level
-            for level in resistance_candidates
-            if level > current_price
-        }
+        {x for x in resistance_candidates if x > current}
     )
 
     for level in supports[:2]:
         fig.add_hline(
-            y=level,
-            line_dash="dash",
+            y=level, line_dash="dash", line_color="#25d9a0",
             annotation_text="Support",
         )
-
     for level in resistances[:2]:
         fig.add_hline(
-            y=level,
-            line_dash="dash",
+            y=level, line_dash="dash", line_color="#ff6177",
             annotation_text="Resistance",
         )
 
     fig.update_layout(
-        title="{} — 1h Market Chart".format(symbol),
+        title=f"{symbol} · {interval} Market Chart",
+        paper_bgcolor="#101a2a",
+        plot_bgcolor="#101a2a",
+        font=dict(color="#dce7f8"),
         xaxis_title="Time (UTC)",
         yaxis_title="Price (USDT)",
         xaxis_rangeslider_visible=False,
-        height=650,
-        legend_title="Indicators",
-        margin=dict(l=10, r=10, t=55, b=10),
+        height=570,
+        margin=dict(l=12, r=12, t=55, b=12),
+        legend=dict(orientation="h", y=1.03, x=0),
+        hovermode="x unified",
     )
-
+    fig.update_xaxes(
+        showgrid=True, gridcolor="#1d2a3d",
+        rangeslider_visible=False,
+    )
+    fig.update_yaxes(showgrid=True, gridcolor="#1d2a3d")
     return fig
 
 
+def speak_analysis(text_to_speak):
+    """Use browser speech synthesis where the browser supports it."""
+    safe_text = json.dumps(str(text_to_speak), ensure_ascii=False)
+    components.html(
+        """
+        <div style="font-family:Arial,sans-serif;color:#dce7f8;
+                    background:#101a2a;padding:12px;border-radius:12px">
+          <button id="speak" style="padding:10px 15px;border-radius:9px;
+                    border:1px solid #34516f;background:#17334a;
+                    color:#fff;font-weight:bold;cursor:pointer">
+             🔊 Speak analysis
+          </button>
+          <button id="stop" style="padding:10px 15px;border-radius:9px;
+                    border:1px solid #65404b;background:#35202a;
+                    color:#fff;cursor:pointer">
+             ⏹ Stop
+          </button>
+          <span id="status" style="margin-left:8px;font-size:12px">
+            Press Speak analysis to hear the report.
+          </span>
+        </div>
+        <script>
+          const report = """ + safe_text + """;
+          const status = document.getElementById("status");
+          document.getElementById("speak").onclick = () => {
+            if (!("speechSynthesis" in window) ||
+                !("SpeechSynthesisUtterance" in window)) {
+              status.textContent =
+                "Speech is not supported by this browser.";
+              return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(report);
+            utterance.lang = "en-US";
+            utterance.rate = 0.94;
+            utterance.pitch = 1.0;
+            utterance.onstart = () => status.textContent = "Speaking…";
+            utterance.onend = () => status.textContent = "Finished.";
+            utterance.onerror = () => status.textContent =
+              "Speech could not be played.";
+            window.speechSynthesis.speak(utterance);
+          };
+          document.getElementById("stop").onclick = () => {
+            if ("speechSynthesis" in window) {
+              window.speechSynthesis.cancel();
+            }
+            status.textContent = "Speech stopped.";
+          };
+        </script>
+        """,
+        height=90,
+    )
+
+
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ Risk settings / رسک سیٹنگز")
+    st.markdown("## ⚙️ Control Center")
+    st.caption("CryptoAI Pro · Market analysis")
 
     capital = st.number_input(
-        "Account capital (USD) / کل سرمایہ (USD)",
-        min_value=10.0,
-        value=500.0,
-        step=50.0,
+        "Account capital (USD)",
+        min_value=10.0, value=500.0, step=50.0,
     )
-
     risk_pct = st.slider(
-        "Maximum planned risk per trade (%) / فی ٹریڈ زیادہ سے زیادہ رسک (%)",
-        min_value=0.1,
-        max_value=5.0,
-        value=1.0,
-        step=0.1,
+        "Planned risk per trade (%)",
+        min_value=0.1, max_value=5.0, value=1.0, step=0.1,
     )
-
     leverage = st.slider(
-        "Leverage used for margin estimate (not a safety rating) / "
-        "مارجن کا اندازہ لگانے کے لیے لیوریج",
-        min_value=1,
-        max_value=20,
-        value=1,
-        step=1,
+        "Leverage for margin estimate",
+        min_value=1, max_value=20, value=1,
     )
-
-    st.caption(
-        "Leverage is only used to estimate margin. "
-        "It is not safe or guaranteed. / لیوریج صرف مارجن کے اندازے "
-        "کے لیے ہے؛ یہ حفاظت کی ضمانت نہیں۔"
-    )
-
     confirm_4h = st.checkbox(
-        "Require 4h trend confirmation / "
-        "4 گھنٹے کے ٹرینڈ کی تصدیق لازم کریں",
-        value=False,
+        "Require 4h trend confirmation", value=False,
     )
 
     st.divider()
+    st.markdown("**Market data**")
+    st.caption("Public Binance spot candles")
+    st.caption("No exchange keys. No orders placed.")
+    st.caption("Scores are not win probabilities.")
 
-    st.caption(
-        "Market data: public Binance spot candles. "
-        "Private exchange keys are never requested. / "
-        "ڈیٹا Binance کی عوامی اسپاٹ کینڈلز سے ہے۔"
-    )
-
+# --------------------------------------------------
+# HEADER
+# --------------------------------------------------
+st.markdown(
+    """
+    <div class="hero">
+      <div class="hero-title">⚡ CryptoAI Pro</div>
+      <div class="hero-sub">
+        Intelligent market analysis · Technical signals · Risk awareness
+      </div>
+      <div style="margin-top:14px">
+        <span class="tag">LIVE DATA ON REQUEST</span>
+        <span class="tag">MULTI-TIMEFRAME</span>
+        <span class="tag">VOICE ASSISTANT</span>
+        <span class="tag">RISK DASHBOARD</span>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 coin_pair = st.selectbox(
-    "🪙 Select a supported pair / دستیاب کوائن منتخب کریں",
+    "🪙 Select market / مارکیٹ منتخب کریں",
     SUPPORTED_SYMBOLS,
 )
 
-tab_analysis, tab_scanner, tab_news = st.tabs(
-    [
-        "🎯 Single-pair analysis / انفرادی تجزیہ",
-        "🔍 Coin scanner / کوائن اسکینر",
-        "📰 Crypto news / کرپٹو خبریں",
-    ]
-)
-
+tab_market, tab_analysis, tab_scanner, tab_news = st.tabs([
+    "🌐 Market Overview",
+    "🎯 AI Analysis",
+    "🔍 Coin Scanner",
+    "📰 Crypto News",
+])
 
 # --------------------------------------------------
-# TAB 1: CHART AND SINGLE-PAIR ANALYSIS
+# MARKET OVERVIEW
 # --------------------------------------------------
-with tab_analysis:
-    st.subheader(
-        "📈 Interactive Market Chart / انٹرایکٹو مارکیٹ چارٹ"
+with tab_market:
+    st.subheader("Market Overview / مارکیٹ کی صورتحال")
+    st.caption(
+        "Load market data to refresh the displayed price and chart. "
+        "Automatic continuous refresh is not enabled in this version."
+    )
+
+    interval = st.selectbox(
+        "Chart timeframe",
+        ["15m", "1h", "4h"],
+        index=1,
+        key="overview_interval",
     )
 
     if st.button(
-        "Load 1h chart / ایک گھنٹے کا چارٹ دکھائیں",
+        "↻ Refresh market data",
+        type="primary",
         use_container_width=True,
     ):
+        cached_klines.clear()
+        st.session_state["overview_error"] = None
         try:
-            with st.spinner(
-                "Loading completed candles... / مکمل کینڈلز لوڈ ہو رہی ہیں..."
-            ):
-                st.session_state["chart_frame"] = cached_klines(
-                    coin_pair, "1h"
+            with st.spinner("Fetching public Binance market data…"):
+                st.session_state["overview_frame"] = cached_klines(
+                    coin_pair, interval
                 )
-                st.session_state["chart_symbol"] = coin_pair
-                st.session_state["chart_error"] = None
-
+                st.session_state["overview_symbol"] = coin_pair
+                st.session_state["overview_interval_saved"] = interval
         except (
-            MarketDataError,
-            requests.RequestException,
-            ValueError,
+            MarketDataError, requests.RequestException, ValueError
         ) as exc:
-            st.session_state["chart_frame"] = None
-            st.session_state["chart_error"] = str(exc)
+            st.session_state["overview_error"] = str(exc)
+            st.session_state["overview_frame"] = None
 
-    chart_error = st.session_state.get("chart_error")
-    if chart_error:
-        st.error(chart_error)
+    overview_error = st.session_state.get("overview_error")
+    if overview_error:
+        st.error(overview_error)
 
-    chart_frame = st.session_state.get("chart_frame")
-    chart_symbol = st.session_state.get("chart_symbol")
+    overview_frame = st.session_state.get("overview_frame")
+    saved_symbol = st.session_state.get("overview_symbol")
+    saved_interval = st.session_state.get("overview_interval_saved")
 
-    if chart_frame is not None and chart_symbol == coin_pair:
+    if (
+        overview_frame is not None
+        and saved_symbol == coin_pair
+        and saved_interval == interval
+    ):
+        latest = overview_frame.iloc[-1]
+        previous = (
+            overview_frame.iloc[-2]
+            if len(overview_frame) > 1 else latest
+        )
+        price = float(latest["close"])
+        previous_price = float(previous["close"])
+        delta = (
+            (price / previous_price - 1) * 100
+            if previous_price else 0.0
+        )
+
+        a, b, c = st.columns(3)
+        a.metric(
+            "Latest completed candle close",
+            format_price(price),
+            f"{delta:+.3f}% vs. previous close",
+        )
+        b.metric("Selected pair", coin_pair)
+        c.metric("Timeframe", interval)
+
         try:
-            fig = build_market_chart(chart_frame, coin_pair)
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.caption(
-                "EMA lines and nearby support/resistance are technical "
-                "references, not guaranteed predictions. / "
-                "یہ تکنیکی اشارے ہیں، مستقبل کی ضمانت نہیں۔"
+            chart = build_market_chart(
+                overview_frame, coin_pair, interval
             )
-
+            st.plotly_chart(chart, use_container_width=True)
         except (MarketDataError, ValueError, KeyError) as exc:
-            st.error("Could not build chart: {}".format(exc))
+            st.error(f"Chart could not be built: {exc}")
 
-    st.divider()
+        st.caption(
+            "The displayed change compares two completed candle closes; "
+            "it is not a prediction of the next candle."
+        )
+    else:
+        st.info(
+            "Select a pair and press Refresh market data to load its "
+            "completed candles and chart."
+        )
 
+    st.markdown("### 🐂 Bull & 🐻 Bear")
     st.write(
-        "The engine checks completed 15m and 1h candles, EMA 20/50/200, "
-        "RSI, MACD, ATR, volume, and recent high/low structure. "
-        "4h confirmation is optional. / مکمل 15m اور 1h کینڈلز، "
-        "EMA 20/50/200، RSI، MACD، ATR، والیوم اور قیمت کا ڈھانچہ "
-        "دیکھا جاتا ہے؛ 4h تصدیق اختیاری ہے۔"
+        "The characters below reflect the most recent analysis result "
+        "available in this app. They do not independently predict prices."
+    )
+
+    last_result = st.session_state.get("single_analysis")
+    last_symbol = st.session_state.get("single_symbol")
+    if last_result and last_symbol == coin_pair:
+        info = direction_info(last_result["signal"])
+    else:
+        info = direction_info("WAIT / NO TRADE")
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown(
+            f"""
+            <div class="panel" style="text-align:center">
+              <div class="creature bull">🐂</div>
+              <div class="panel-value bull">BULL</div>
+              <div class="panel-note">Represents bullish analysis</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.markdown(
+            f"""
+            <div class="panel" style="text-align:center">
+              <div class="creature bear">🐻</div>
+              <div class="panel-value bear">BEAR</div>
+              <div class="panel-note">Represents bearish analysis</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        f"""
+        <div class="panel" style="margin-top:12px">
+          <div class="panel-label">CURRENT ANALYSIS STATE</div>
+          <div class="panel-value {info['class']}">
+            {html.escape(info['emoji'])} &nbsp;
+            {html.escape(info['title'])}
+          </div>
+          <div class="panel-note">{html.escape(info['message'])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# --------------------------------------------------
+# SINGLE-PAIR ANALYSIS
+# --------------------------------------------------
+with tab_analysis:
+    st.subheader("AI-assisted technical analysis")
+    st.caption(
+        "Rule-based analysis engine · completed candles · no trade execution"
     )
 
     if st.button(
-        "Analyze selected pair / منتخب کوائن کا تجزیہ کریں",
+        "🎯 Analyze selected pair",
         type="primary",
         use_container_width=True,
     ):
         try:
             with st.spinner(
-                "Fetching completed candles and evaluating confirmations… / "
-                "مکمل کینڈلز اور تصدیقات دیکھی جا رہی ہیں…"
+                "Fetching candles and checking confirmations…"
             ):
                 st.session_state["single_analysis"] = run_analysis(
                     coin_pair, capital, risk_pct, leverage, confirm_4h
                 )
                 st.session_state["single_symbol"] = coin_pair
                 st.session_state["single_error"] = None
-
         except (
-            MarketDataError,
-            requests.RequestException,
-            ValueError,
+            MarketDataError, requests.RequestException, ValueError
         ) as exc:
             st.session_state["single_analysis"] = None
             st.session_state["single_error"] = str(exc)
 
-    single_error = st.session_state.get("single_error")
-    if single_error:
-        st.error(single_error)
+    if st.session_state.get("single_error"):
+        st.error(st.session_state["single_error"])
 
     result = st.session_state.get("single_analysis")
     result_symbol = st.session_state.get("single_symbol")
 
     if result and result_symbol == coin_pair:
-        st.markdown("---")
+        info = direction_info(result["signal"])
 
-        m1, m2 = st.columns(2)
-        m1.metric(
-            "Latest completed 1h close / تازہ مکمل 1h کلوز",
-            format_price(result["price"]),
-        )
-        m2.metric(
-            "Signal / اشارہ",
-            display_signal(result["signal"]),
-        )
-
-        m3, m4 = st.columns(2)
-        m3.metric(
-            "Setup score / سیٹ اپ اسکور",
-            "{:.1f}/100".format(result["score"]),
-        )
-        m4.metric(
-            "Directional score gap / سمت کے اسکور کا فرق",
-            "{:.1f} points".format(result["directional_gap"]),
+        st.markdown(
+            f"""
+            <div class="panel">
+              <div class="panel-label">MARKET DIRECTION</div>
+              <div class="panel-value {info['class']}">
+                {html.escape(info['emoji'])}
+                &nbsp; {html.escape(display_signal(result['signal']))}
+              </div>
+              <div class="panel-note">{html.escape(info['message'])}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Latest completed 1h close", format_price(result["price"]))
+        m2.metric("Setup score", f"{result['score']:.1f}/100")
+        m3.metric("Directional score gap", f"{result['directional_gap']:.1f}")
+
+        st.progress(min(1.0, max(0.0, result["score"] / 100.0)))
         st.caption(
-            "A rule-based setup score is not a probability of profit. "
-            "WAIT means confirmations are insufficient. / "
-            "یہ اسکور منافع کا امکان نہیں؛ WAIT کا مطلب تصدیق ناکافی ہے۔"
+            "The setup score is not a probability of profit or a guarantee."
         )
-        st.progress(result["score"] / 100.0)
 
         rows = []
-        for interval, detail in result["timeframes"].items():
+        for timeframe, detail in result["timeframes"].items():
             direction = (
-                "LONG"
-                if detail["long_score"] > detail["short_score"]
-                else "SHORT"
-                if detail["short_score"] > detail["long_score"]
+                "LONG" if detail["long_score"] > detail["short_score"]
+                else "SHORT" if detail["short_score"] > detail["long_score"]
                 else "NEUTRAL"
             )
-            score = max(
-                detail["long_score"],
-                detail["short_score"],
-            )
+            rows.append({
+                "Timeframe": timeframe,
+                "Close": format_price(detail["close"]),
+                "RSI": round(detail["rsi"], 1),
+                "EMA trend": direction,
+                "Long score": detail["long_score"],
+                "Short score": detail["short_score"],
+                "Volume confirmed": detail["volume_confirmed"],
+                "Structure": detail["structure"],
+            })
 
-            rows.append(
-                {
-                    "Timeframe / ٹائم فریم": interval,
-                    "Close / کلوز": format_price(detail["close"]),
-                    "RSI (14)": round(detail["rsi"], 1),
-                    "EMA trend / رجحان": direction,
-                    "Directional score / سمتی اسکور": "{}/100".format(score),
-                    "Volume confirmed / والیوم تصدیق": (
-                        "Yes / ہاں"
-                        if detail["volume_confirmed"]
-                        else "No / نہیں"
-                    ),
-                    "Structure / قیمت کا ڈھانچہ": detail["structure"],
-                }
-            )
-
-        st.subheader("Timeframe confirmations / ٹائم فریم کی تصدیق")
+        st.subheader("Timeframe confirmations")
         st.dataframe(
             pd.DataFrame(rows),
             use_container_width=True,
             hide_index=True,
         )
 
+        st.subheader("Why this result?")
+        for reason in result["reasons"]:
+            st.write("• " + reason)
+
+        voice_lines = [
+            f"Market analysis for {coin_pair}.",
+            f"The current signal is {result['signal']}.",
+            f"The setup score is {result['score']} out of 100.",
+            f"The directional score gap is {result['directional_gap']} points.",
+        ]
+        for timeframe, detail in result["timeframes"].items():
+            voice_lines.append(
+                f"On the {timeframe} timeframe, the close is "
+                f"{detail['close']:.8g}, RSI is {detail['rsi']:.1f}, "
+                f"and the market structure is {detail['structure']}."
+            )
+        voice_lines.append("Reasons: " + " ".join(result["reasons"]))
+        voice_lines.append(
+            "This is educational technical analysis, not financial advice. "
+            "Signals can be wrong."
+        )
+
+        st.subheader("🔊 Voice assistant")
+        speak_analysis(" ".join(voice_lines))
+
         if result["signal"] == "WAIT / NO TRADE":
             st.warning(
-                "No trade signal / کوئی ٹریڈ سگنل نہیں۔ "
-                + " ".join(result["reasons"])
+                "No confirmed trade setup. Waiting is a valid result."
             )
-
         else:
-            st.success(
-                "{} — confirmations passed; this is not a guarantee. / "
-                "تصدیقات پوری ہوئیں، مگر نتیجے کی ضمانت نہیں۔".format(
-                    display_signal(result["signal"])
-                )
-            )
-
             risk = result["risk"]
+            st.subheader("Risk & hypothetical position sizing")
 
-            c1, c2 = st.columns(2)
-            c1.write(
-                "**Illustrative entry reference / اندازاً انٹری:** "
-                + format_price(risk["entry"])
-            )
-            c2.write(
-                "**Stop loss / اسٹاپ لاس:** "
-                + format_price(risk["stop"])
-            )
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Illustrative entry", format_price(risk["entry"]))
+            r2.metric("Stop loss", format_price(risk["stop"]))
+            r3.metric("Planned loss before costs", format_price(risk["planned_loss"]))
 
-            c3, c4 = st.columns(2)
-            c3.write(
-                "**Target 1 / ہدف 1:** "
-                + format_price(risk["target1"])
-                + " (R:R {:.2f})".format(risk["rr_target1"])
-            )
-            c4.write(
-                "**Target 2 / ہدف 2:** "
-                + format_price(risk["target2"])
-                + " (R:R {:.2f})".format(risk["rr_target2"])
-            )
-
-            st.subheader(
-                "Hypothetical position sizing / فرضی پوزیشن سائزنگ"
-            )
-
-            r1, r2 = st.columns(2)
-            r1.metric(
-                "Quantity / مقدار",
-                "{:.6g} units".format(risk["quantity"]),
-            )
-            r2.metric(
-                "Position notional / پوزیشن کی کل مالیت",
-                format_price(risk["notional"]),
-            )
-
-            r3, r4 = st.columns(2)
-            r3.metric(
-                "Estimated margin at {}x / اندازاً مارجن".format(
-                    int(risk["leverage"])
-                ),
-                format_price(risk["margin"]),
-            )
+            r4, r5, r6 = st.columns(3)
             r4.metric(
-                "Maximum planned loss before costs / "
-                "اخراجات سے پہلے زیادہ سے زیادہ طے شدہ نقصان",
-                format_price(risk["planned_loss"]),
+                "Target 1",
+                format_price(risk["target1"]),
+                f"R:R {risk['rr_target1']:.2f}",
+            )
+            r5.metric(
+                "Target 2",
+                format_price(risk["target2"]),
+                f"R:R {risk['rr_target2']:.2f}",
+            )
+            r6.metric("Quantity", f"{risk['quantity']:.6g}")
+
+            r7, r8 = st.columns(2)
+            r7.metric("Position notional", format_price(risk["notional"]))
+            r8.metric(
+                f"Estimated margin at {risk['leverage']}x",
+                format_price(risk["margin"]),
             )
 
             if risk["margin"] > capital:
                 st.warning(
-                    "Estimated margin exceeds the selected account capital "
-                    "at this leverage. The risk-based position size has not "
-                    "been capped; review before any manual decision. / "
-                    "اندازاً مارجن منتخب سرمائے سے زیادہ ہے؛ پوزیشن سائز "
-                    "کم نہیں کیا گیا، دستی فیصلے سے پہلے اعداد دیکھیں۔"
+                    "Estimated margin exceeds the selected capital. "
+                    "Review this hypothetical calculation carefully."
                 )
 
             st.caption(
-                "Position quantity uses account capital × risk % divided "
-                "by stop distance. Margin is notional ÷ leverage. Fees, "
-                "slippage, funding, liquidation, gaps, and exchange rules "
-                "can change real outcomes; excluded from this estimate. / "
-                "فیس، سلپیج، فنڈنگ، لیکویڈیشن اور ایکسچینج قواعد اس اندازے "
-                "میں شامل نہیں۔"
+                "Fees, slippage, funding, liquidation, gaps, and exchange "
+                "rules are not included in these estimates."
             )
-
-            st.write(
-                "**Confirmations / تصدیقات:** "
-                + "; ".join(result["reasons"])
-            )
-
 
 # --------------------------------------------------
-# TAB 2: COIN SCANNER
+# COIN SCANNER
 # --------------------------------------------------
 with tab_scanner:
-    st.subheader("Multi-timeframe scanner / ملٹی ٹائم فریم اسکینر")
-
+    st.subheader("Multi-timeframe coin scanner")
     st.write(
-        "Scans supported pairs using completed 15m/1h candles "
-        "(and 4h when enabled). A failed symbol is reported without "
-        "stopping the scan. / دستیاب کوائنز کو اسکین کرتا ہے؛ "
-        "ناکام کوائن کی رپورٹ الگ آتی ہے۔"
+        "Scan supported pairs using completed 15m and 1h candles, "
+        "with optional 4h confirmation."
     )
 
     if st.button(
-        "Scan all supported pairs / تمام دستیاب کوائن اسکین کریں",
+        "🔍 Scan all supported pairs",
         use_container_width=True,
     ):
         table, errors = [], []
@@ -504,41 +736,25 @@ with tab_scanner:
 
         for index, symbol in enumerate(SUPPORTED_SYMBOLS):
             status.caption(
-                "Scanning / اسکین {} ({}/{})".format(
-                    symbol, index + 1, len(SUPPORTED_SYMBOLS)
-                )
+                f"Scanning {symbol} ({index + 1}/{len(SUPPORTED_SYMBOLS)})"
             )
-
             try:
                 item = run_analysis(
                     symbol, capital, risk_pct, leverage, confirm_4h
                 )
-
-                table.append(
-                    {
-                        "Symbol / کوائن": symbol,
-                        "Signal / اشارہ": display_signal(item["signal"]),
-                        "Score / اسکور": "{:.1f}/100".format(item["score"]),
-                        "Price (1h close) / قیمت": format_price(item["price"]),
-                        "RSI 15m": round(item["rsi_15m"], 1),
-                        "RSI 1h": round(item["rsi_1h"], 1),
-                        "Illustrative TP1 R:R / اندازاً R:R": (
-                            "1:{:.2f}".format(item["rr"])
-                        ),
-                    }
-                )
-
+                table.append({
+                    "Symbol": symbol,
+                    "Signal": display_signal(item["signal"]),
+                    "Score": f"{item['score']:.1f}/100",
+                    "1h close": format_price(item["price"]),
+                    "RSI 15m": round(item["rsi_15m"], 1),
+                    "RSI 1h": round(item["rsi_1h"], 1),
+                    "Target 1 R:R": f"1:{item['rr']:.2f}",
+                })
             except (
-                MarketDataError,
-                requests.RequestException,
-                ValueError,
+                MarketDataError, requests.RequestException, ValueError
             ) as exc:
-                errors.append(
-                    {
-                        "Symbol": symbol,
-                        "Error / خرابی": str(exc),
-                    }
-                )
+                errors.append({"Symbol": symbol, "Error": str(exc)})
 
             progress.progress((index + 1) / len(SUPPORTED_SYMBOLS))
 
@@ -547,61 +763,55 @@ with tab_scanner:
         st.session_state["scan_errors"] = errors
 
     if "scan_table" in st.session_state:
-        if st.session_state["scan_table"]:
+        table = st.session_state["scan_table"]
+        errors = st.session_state.get("scan_errors", [])
+
+        if table:
             st.dataframe(
-                pd.DataFrame(st.session_state["scan_table"]),
+                pd.DataFrame(table),
                 use_container_width=True,
                 hide_index=True,
-            )
-            st.caption(
-                "Illustrative target-1 R:R uses fixed ATR multiples, "
-                "not historical performance. Scores are not win probabilities."
             )
         else:
-            st.info(
-                "No symbols returned analyzable data. / "
-                "کسی کوائن کا قابلِ تجزیہ ڈیٹا نہیں ملا۔"
-            )
+            st.info("No pairs returned analyzable data.")
 
-        if st.session_state["scan_errors"]:
+        if errors:
             st.warning(
-                "Some pairs could not be scanned; successful results "
-                "are still shown. / کچھ کوائن اسکین نہیں ہوئے۔"
+                f"{len(errors)} pair(s) could not be scanned."
             )
             st.dataframe(
-                pd.DataFrame(st.session_state["scan_errors"]),
+                pd.DataFrame(errors),
                 use_container_width=True,
                 hide_index=True,
             )
 
-
 # --------------------------------------------------
-# TAB 3: CRYPTO NEWS
+# CRYPTO NEWS
 # --------------------------------------------------
 with tab_news:
-    st.subheader("Public crypto news / عوامی کرپٹو خبریں")
-
-    st.caption(
-        "Headlines link to original publishers. No sentiment or AI "
-        "classification is applied. / خبریں اصل پبلشر سے منسلک ہیں؛ "
-        "کوئی AI یا جذباتی درجہ بندی نہیں۔"
-    )
+    st.subheader("📰 Public crypto news")
+    st.caption("Headlines link to their original publishers.")
 
     if st.button(
-        "Load / refresh news / خبریں لوڈ یا تازہ کریں",
+        "↻ Load / refresh news",
         use_container_width=True,
     ):
-        cached_news.clear()
-        st.session_state["news_data"] = cached_news()
+        try:
+            cached_news.clear()
+            st.session_state["news_data"] = cached_news()
+            st.session_state["news_error"] = None
+        except (
+            MarketDataError, requests.RequestException, ValueError
+        ) as exc:
+            st.session_state["news_error"] = str(exc)
+
+    if st.session_state.get("news_error"):
+        st.error(st.session_state["news_error"])
 
     news = st.session_state.get("news_data")
 
     if news is None:
-        st.info(
-            "Select Load / refresh news to retrieve current headlines. / "
-            "تازہ خبریں دیکھنے کے لیے لوڈ کا بٹن دبائیں۔"
-        )
-
+        st.info("Press Load / refresh news to retrieve headlines.")
     elif news["articles"]:
         for article in news["articles"]:
             st.link_button(
@@ -610,28 +820,24 @@ with tab_news:
                 use_container_width=True,
             )
             st.caption(
-                "{} / ماخذ · {} / اشاعت".format(
-                    article["source"], article["published"]
-                )
+                f"{article['source']} · {article['published']}"
             )
-
     else:
-        st.info(
-            "No headlines are currently available from the configured feeds. / "
-            "منتخب نیوز فیڈز سے خبریں دستیاب نہیں۔"
-        )
+        st.info("No headlines are currently available.")
 
     if news and news["errors"]:
-        with st.expander("Feed availability details / فیڈ کی دستیابی"):
+        with st.expander("News feed availability details"):
             for error in news["errors"]:
                 st.warning(error)
 
-
-st.markdown("---")
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+st.divider()
 st.caption(
-    "Educational market-data tool only; not investment advice. "
-    "It never places orders. Use at your own risk. / "
-    "یہ تعلیمی مارکیٹ ڈیٹا ٹول ہے، سرمایہ کاری کا مشورہ نہیں "
-    "اور کوئی آرڈر نہیں دیتا۔"
+    "CryptoAI Pro · Educational market-data tool only. "
+    "Not investment advice. No orders are placed. "
+    "Market signals are estimates and may be wrong."
 )
+
 
