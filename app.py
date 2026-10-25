@@ -1,4 +1,3 @@
-
 import json
 import html
 
@@ -839,5 +838,6 @@ st.caption(
     "Not investment advice. No orders are placed. "
     "Market signals are estimates and may be wrong."
 )
+
 
 
