@@ -11,11 +11,60 @@ BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}
 
+
 st.markdown("""
 <style>
-.stApp{background:linear-gradient(145deg,#07101d,#101c2e);color:#eaecef}
-section[data-testid="stSidebar"]{background:#0b1422}
-div[data-testid="stMetric"]{background:#111f32;border:1px solid #263950;padding:12px;border-radius:12px}
+.stApp {
+    background: #f5f7fb;
+    color: #1e293b;
+}
+[data-testid="stHeader"] {
+    background: rgba(255, 255, 255, 0.95);
+}
+section[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid #e2e8f0;
+}
+section[data-testid="stSidebar"] * {
+    color: #1e293b;
+}
+div[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+.stButton > button,
+.stFormSubmitButton > button {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    min-height: 42px;
+}
+.stButton > button:hover,
+.stFormSubmitButton > button:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+    border: 1px solid #1d4ed8;
+}
+div[data-baseweb="tab-list"] {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 5px;
+}
+div[data-baseweb="tab"] {
+    color: #334155;
+}
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+    background: #ffffff;
+}
+</style>
+""", unsafe_allow_html=True)
+
 </style>""", unsafe_allow_html=True)
 
 def api(url, params=None):
