@@ -63,8 +63,6 @@ div[data-baseweb="tab"] {
 }
 </style>
 """, unsafe_allow_html=True)
-</style>""", unsafe_allow_html=True)
-
 def api(url, params=None):
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=10)
