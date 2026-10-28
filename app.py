@@ -25,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-BASE = "https://api.binance.com"
+BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
 TIMEOUT = 12
 
