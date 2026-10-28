@@ -11,7 +11,6 @@ BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}
 
-
 st.markdown("""
 <style>
 .stApp {
@@ -64,7 +63,6 @@ div[data-baseweb="tab"] {
 }
 </style>
 """, unsafe_allow_html=True)
-
 </style>""", unsafe_allow_html=True)
 
 def api(url, params=None):
