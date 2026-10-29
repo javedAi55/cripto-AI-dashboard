@@ -10,7 +10,10 @@ import xml.etree.ElementTree as ET
 st.set_page_config(page_title="Crypto AI Dashboard Pro+", page_icon="₿", layout="wide")
 BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
-HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}def ask_gemini(question, market_context):
+HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}
+
+
+def ask_gemini(question, market_context):
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
         client = genai.Client(api_key=api_key)
