@@ -10,59 +10,106 @@ st.set_page_config(page_title="Crypto AI Dashboard Pro+", page_icon="₿", layou
 BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}
-
 st.markdown("""
 <style>
+/* Main dashboard */
 .stApp {
     background: #f5f7fb;
     color: #1e293b;
 }
+
+/* Header */
 [data-testid="stHeader"] {
-    background: rgba(255, 255, 255, 0.95);
+    background: #ffffff;
 }
+
+/* Sidebar */
 section[data-testid="stSidebar"] {
     background: #ffffff;
     border-right: 1px solid #e2e8f0;
 }
-section[data-testid="stSidebar"] * {
+
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span {
     color: #1e293b;
 }
+
+/* Metric cards */
 div[data-testid="stMetric"] {
     background: #ffffff;
     border: 1px solid #e2e8f0;
     padding: 16px;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
 }
+
+/* Headings */
+h1, h2, h3 {
+    color: #172b4d;
+    font-weight: 700;
+}
+
+/* Buttons */
 .stButton > button,
 .stFormSubmitButton > button {
     background: #2563eb;
     color: #ffffff;
-    border: none;
+    border: 1px solid #2563eb;
     border-radius: 8px;
     font-weight: 600;
     min-height: 42px;
 }
+
 .stButton > button:hover,
 .stFormSubmitButton > button:hover {
     background: #1d4ed8;
     color: #ffffff;
-    border: 1px solid #1d4ed8;
+    border-color: #1d4ed8;
 }
+
+/* Tabs */
 div[data-baseweb="tab-list"] {
     background: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
     padding: 5px;
+    gap: 5px;
 }
+
 div[data-baseweb="tab"] {
     color: #334155;
 }
+
+/* Tables */
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
     background: #ffffff;
+    border-radius: 10px;
+}
+
+/* Input fields */
+.stTextInput input,
+.stNumberInput input {
+    background: #ffffff;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+}
+
+/* Information boxes */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+/* Main content spacing */
+.block-container {
+    padding-top: 1.8rem;
+    padding-bottom: 2rem;
 }
 </style>
 """, unsafe_allow_html=True)
+
 def api(url, params=None):
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=10)
