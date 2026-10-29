@@ -148,8 +148,101 @@ def candles(symbol, interval):
 @st.cache_data(ttl=10, show_spinner=False)
 def ticker(symbol):
     return api(f"{BASE}/api/v3/ticker/24hr",{"symbol":symbol})
+def chart(df, symbol, count, emas):
+    d = df.tail(count).copy()
 
-def chart(df,symbol,count,emas):
+    f = go.Figure()
+
+    # Main candlestick chart
+    f.add_trace(go.Candlestick(
+        x=d["time"],
+        open=d["open"],
+        high=d["high"],
+        low=d["low"],
+        close=d["close"],
+        name=symbol,
+        increasing=dict(
+            line=dict(color="#00C087", width=1),
+            fillcolor="#00C087"
+        ),
+        decreasing=dict(
+            line=dict(color="#F6465D", width=1),
+            fillcolor="#F6465D"
+        ),
+        whiskerwidth=0.5
+    ))
+
+    # Moving averages
+    if emas:
+        f.add_trace(go.Scatter(
+            x=d["time"], y=d["EMA20"],
+            name="EMA 20",
+            line=dict(color="#F0B90B", width=2)
+        ))
+
+        f.add_trace(go.Scatter(
+            x=d["time"], y=d["EMA50"],
+            name="EMA 50",
+            line=dict(color="#3B82F6", width=2)
+        ))
+
+        if len(df) >= 200:
+            f.add_trace(go.Scatter(
+                x=d["time"], y=d["EMA200"],
+                name="EMA 200",
+                line=dict(color="#A78BFA", width=2)
+            ))
+
+    # Professional dark layout
+    f.update_layout(
+        title=dict(
+            text=f"{symbol}  |  {interval_label if False else 'Candlestick Chart'}",
+            font=dict(size=20, color="#F1F5F9"),
+            x=0.02
+        ),
+        template="plotly_dark",
+        paper_bgcolor="#0B1220",
+        plot_bgcolor="#111827",
+        height=620,
+        margin=dict(l=15, r=15, t=65, b=20),
+        font=dict(
+            family="Arial, sans-serif",
+            size=12,
+            color="#CBD5E1"
+        ),
+        xaxis=dict(
+            rangeslider=dict(visible=False),
+            showgrid=True,
+            gridcolor="rgba(148,163,184,0.12)",
+            zeroline=False,
+            showline=True,
+            linecolor="#334155",
+            fixedrange=False
+        ),
+        yaxis=dict(
+            side="right",
+            title="Price (USDT)",
+            showgrid=True,
+            gridcolor="rgba(148,163,184,0.12)",
+            zeroline=False,
+            showline=True,
+            linecolor="#334155",
+            fixedrange=False,
+            tickformat=",.8f"
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            x=0.01,
+            bgcolor="rgba(0,0,0,0)"
+        ),
+        hovermode="x unified",
+        dragmode="pan"
+    )
+
+    return f
+
     d=df.tail(count)
     f=go.Figure()
     f.add_trace(go.Candlestick(x=d.time,open=d.open,high=d.high,low=d.low,close=d.close,name=symbol,
