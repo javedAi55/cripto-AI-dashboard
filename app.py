@@ -423,15 +423,15 @@ with tabs[0]:
     st.subheader(f"{symbol} — {interval}")
     if has:
         st.plotly_chart(chart(df,symbol,count,emas),width="stretch",
-            config={
-"scrollZoom": True,
-"displaylogo": False,
-"responsive": True,
-"doubleClick": "reset",
-"modeBarButtonsToAdd": ["zoom2d", "pan2d", "resetScale2d"],
-"displayModeBar": True,
-"showTips": True
-}
+                        config={
+                "scrollZoom": True,
+                "displaylogo": False,
+                "responsive": True,
+                "doubleClick": "reset",
+                "modeBarButtonsToAdd": ["zoom2d", "pan2d", "resetScale2d"],
+                "displayModeBar": True,
+                "showTips": True
+            }, key="market_chart")
         st.markdown("### تازہ کینڈلز")
         st.dataframe(df[["time","open","high","low","close","volume","EMA20","EMA50","RSI"]].tail(20).sort_values("time",ascending=False),width="stretch",hide_index=True)
         v=df.tail(100); vf=go.Figure()
