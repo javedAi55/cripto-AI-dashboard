@@ -10,7 +10,34 @@ import xml.etree.ElementTree as ET
 st.set_page_config(page_title="Crypto AI Dashboard Pro+", page_icon="₿", layout="wide")
 BASE = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
-HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}
+HEADERS = {"User-Agent": "CryptoAIDashboard/2.0"}def ask_gemini(question, market_context):
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        client = genai.Client(api_key=api_key)
+
+        prompt = f"""
+آپ ایک محتاط کرپٹو مارکیٹ اسسٹنٹ ہیں۔
+صارف کو آسان اردو میں جواب دیں۔
+مارکیٹ ڈیٹا کی بنیاد پر تجزیہ کریں۔
+یقینی منافع یا پکے خرید و فروخت کے دعوے نہ کریں۔
+خطرات اور غیر یقینی صورت حال واضح کریں۔
+
+مارکیٹ ڈیٹا:
+{market_context}
+
+صارف کا سوال:
+{question}
+"""
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        return response.text or "معذرت، اس بار جواب نہیں ملا۔"
+
+    except Exception as e:
+        return f"Gemini سے رابطے میں مسئلہ آیا: {e}"
 st.markdown("""
 <style>
 /* Main dashboard */
