@@ -1,4 +1,4 @@
-from google import genai
+import streamlit as st from google import genai
 import pandas as pd
 import numpy as np
 import requests
