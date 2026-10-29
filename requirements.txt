@@ -1,6 +1,6 @@
-
 streamlit>=1.34,<2
 pandas>=2.0,<4
 requests>=2.31,<3
 plotly>=5.18,<7
+google-genai
 
