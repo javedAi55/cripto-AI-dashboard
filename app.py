@@ -153,6 +153,100 @@ def chart(df, symbol, count, emas):
 
     f = go.Figure()
 
+    # Clear green and red candles
+    f.add_trace(go.Candlestick(
+        x=d["time"],
+        open=d["open"],
+        high=d["high"],
+        low=d["low"],
+        close=d["close"],
+        name=symbol,
+        increasing=dict(
+            line=dict(color="#00A878", width=1.5),
+            fillcolor="#00C087"
+        ),
+        decreasing=dict(
+            line=dict(color="#E53950", width=1.5),
+            fillcolor="#F6465D"
+        ),
+        whiskerwidth=0.7
+    ))
+
+    # Moving average lines
+    if emas:
+        f.add_trace(go.Scatter(
+            x=d["time"], y=d["EMA20"],
+            name="EMA 20",
+            line=dict(color="#D99A00", width=2)
+        ))
+
+        f.add_trace(go.Scatter(
+            x=d["time"], y=d["EMA50"],
+            name="EMA 50",
+            line=dict(color="#2563EB", width=2)
+        ))
+
+        if len(df) >= 200:
+            f.add_trace(go.Scatter(
+                x=d["time"], y=d["EMA200"],
+                name="EMA 200",
+                line=dict(color="#9333EA", width=2)
+            ))
+
+    # White professional chart
+    f.update_layout(
+        title=dict(
+            text=f"{symbol} | Candlestick Chart",
+            font=dict(size=18, color="#1E293B"),
+            x=0.02
+        ),
+        template="plotly_white",
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        height=650,
+        margin=dict(l=8, r=5, t=60, b=15),
+        font=dict(
+            family="Arial, sans-serif",
+            size=11,
+            color="#475569"
+        ),
+        xaxis=dict(
+            rangeslider=dict(visible=False),
+            showgrid=True,
+            gridcolor="#EEF2F7",
+            zeroline=False,
+            tickfont=dict(size=10, color="#64748B"),
+            fixedrange=False
+        ),
+        yaxis=dict(
+            side="right",
+            title=dict(
+                text="USDT",
+                font=dict(size=10, color="#64748B")
+            ),
+            tickfont=dict(size=9, color="#64748B"),
+            showgrid=True,
+            gridcolor="#EEF2F7",
+            zeroline=False,
+            tickformat="~s",
+            fixedrange=False
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            x=0.01,
+            font=dict(size=10, color="#334155")
+        ),
+        hovermode="x unified",
+        dragmode="pan"
+    )
+
+    return f
+    d = df.tail(count).copy()
+
+    f = go.Figure()
+
     # Main candlestick chart
     f.add_trace(go.Candlestick(
         x=d["time"],
