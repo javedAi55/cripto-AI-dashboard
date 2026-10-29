@@ -469,37 +469,52 @@ with tabs[0]:
         vf.update_layout(template="plotly_dark",height=300,title="ٹریڈ کا حجم")
         st.plotly_chart(vf,width="stretch")
     else: st.info("ڈیٹا دستیاب ہوتے ہی چارٹ یہاں نظر آئے گا۔")
-
 with tabs[1]:
-    st.subheader("🤖 مفت اردو مارکیٹ اسسٹنٹ")
-    st.caption("یہ rule-based مددگار ہے، حقیقی ChatGPT/LLM نہیں اور اس کے لیے paid API نہیں چاہیے۔")
-    if has:
-        rsi=float(last.RSI)
-        rtxt="RSI زیادہ ہے؛ قیمت میں واپسی کا خطرہ ہو سکتا ہے۔" if rsi>=70 else ("RSI کم ہے؛ فروخت کا دباؤ بڑھا ہو سکتا ہے۔" if rsi<=30 else "RSI درمیانی حد میں ہے۔")
-        etxt="EMA 20، EMA 50 سے اوپر ہے۔" if last.EMA20>last.EMA50 else "EMA 20، EMA 50 سے نیچے ہے۔"
-        vtxt="حجم 20 کینڈلز کی اوسط سے زیادہ ہے۔" if pd.notna(last.VolumeMA20) and last.volume>last.VolumeMA20 else "حجم 20 کینڈلز کی اوسط سے زیادہ نہیں۔"
-        st.markdown(f"""### مارکیٹ رپورٹ
-**اثاثہ:** {symbol}  
-**قیمت:** {price:,.8f} USDT  
-**24 گھنٹے کی تبدیلی:** {change:.2f}%  
-**رجحان:** {trend}  
-**تکنیکی اشارہ:** {sig}  
-**RSI ({rsi:.1f}):** {rtxt}  
-**EMA:** {etxt}  
-**حجم:** {vtxt}  
+    st.subheader("🤖 Gemini اردو مارکیٹ اسسٹنٹ")
+    st.caption("لائیو مارکیٹ ڈیٹا کی بنیاد پر AI تجزیہ — جواب مالی مشورہ یا منافع کی ضمانت نہیں۔")
 
-**احتیاط:** یہ ماضی اور موجودہ ڈیٹا کی سادہ تشریح ہے، قیمت یا منافع کی ضمانت نہیں۔""")
-        q=st.text_input("سوال لکھیں، مثلاً RSI کیا ہے؟",key="urdu_question")
-        if st.button("اردو میں جواب دیں"):
-            q=q.lower().strip()
-            if not q: st.info("پہلے سوال لکھیں۔")
-            elif any(w in q for w in ["rsi","آر ایس آئی"]): st.write(f"RSI {rsi:.1f} ہے۔ {rtxt} RSI اکیلا فیصلہ کرنے کے لیے کافی نہیں۔")
-            elif any(w in q for w in ["ema","رجحان","ٹرینڈ","trend"]): st.write(f"موجودہ کیفیت: {trend}. {etxt}")
-            elif any(w in q for w in ["قیمت","price","کتنی"]): st.write(f"{symbol} کی آخری دستیاب بند قیمت {price:,.8f} USDT ہے۔")
-            elif any(w in q for w in ["خرید","بیچ","buy","sell","سگنل","signal"]): st.write(f"رجحان {trend} اور اشارہ {sig} ہے۔ اسے یقینی خرید/فروخت نہ سمجھیں؛ پہلے نقصان کی حد طے کریں۔")
-            elif any(w in q for w in ["حجم","volume"]): st.write(vtxt+" حجم اکیلا سمت کی تصدیق نہیں کرتا۔")
-            else: st.write("میں فی الحال قیمت، RSI، EMA، حجم اور تکنیکی اشاروں کے سوالات کے جواب دے سکتا ہوں۔")
-    else: st.info("مارکیٹ ڈیٹا دستیاب نہیں، اس لیے ابھی لائیو رپورٹ نہیں بن سکتی۔")
+    if has:
+        rsi = float(last.RSI)
+        market_context = f"""
+اثاثہ: {symbol}
+ٹائم فریم: {interval}
+آخری دستیاب قیمت: {price} USDT
+24 گھنٹے کی تبدیلی: {change:.2f}%
+رجحان: {trend}
+تکنیکی اشارہ: {sig}
+RSI 14: {rsi:.2f}
+EMA20: {float(last.EMA20)}
+EMA50: {float(last.EMA50)}
+EMA200: {float(last.EMA200)}
+تازہ حجم: {float(last.volume)}
+"""
+
+        st.markdown(f"""### تازہ مارکیٹ رپورٹ
+**اثاثہ:** {symbol}
+**قیمت:** {price:,.8f} USDT
+**24 گھنٹے کی تبدیلی:** {change:.2f}%
+**رجحان:** {trend}
+**تکنیکی اشارہ:** {sig}
+**RSI:** {rsi:.1f}
+
+**احتیاط:** مارکیٹ تیزی سے بدل سکتی ہے۔""")
+
+        q = st.text_input(
+            "اپنا سوال اردو یا انگریزی میں لکھیں:",
+            key="urdu_question"
+        )
+
+        if st.button("🤖 Gemini سے جواب لیں"):
+            if not q.strip():
+                st.info("پہلے اپنا سوال لکھیں۔")
+            else:
+                with st.spinner("آپ کی AI اسسٹنٹ جواب تیار کر رہی ہے..."):
+                    answer = ask_gemini(q.strip(), market_context)
+                st.markdown("### 🤖 AI کا جواب")
+                st.write(answer)
+    else:
+        st.info("لائیو مارکیٹ ڈیٹا دستیاب ہونے پر AI اسسٹنٹ استعمال کریں۔")
+
 
 with tabs[2]:
     st.subheader("📰 کرپٹو خبریں")
